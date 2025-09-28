@@ -1,5 +1,5 @@
 if Code.ensure_loaded?(Igniter) do
-  defmodule Mix.Tasks.PhoenixContribStorageEx.Install do
+  defmodule Mix.Tasks.StorageExEcto.Install do
     @shortdoc "Installs StorageEx into a project.
     Should be called with `mix igniter.install phoenix_contrib_storage_ex`"
 
@@ -34,7 +34,7 @@ if Code.ensure_loaded?(Igniter) do
     @impl Igniter.Mix.Task
     def igniter(igniter) do
       igniter
-      |> Mix.Tasks.StorageEx.Migrations.add_storage_migration()
+      |> Mix.Tasks.Install.Migrations.add_storage_migration()
       |> Igniter.Scribe.start_document(
         "Manual Installation",
         @manual_lead_in,
@@ -66,4 +66,3 @@ else
     end
   end
 end
-

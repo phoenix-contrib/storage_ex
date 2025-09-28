@@ -1,7 +1,8 @@
 ExUnit.start()
+ExUnit.configure(exclude: :pending)
 
-# Configure test repo if needed
-# Application.put_env(:phoenix_contrib_storage, :default_service, :test_local)
-# Application.put_env(:phoenix_contrib_storage, :services, %{
-#   test_local: {Storage.Services.Local, root: "/tmp/storage_test"}
-# })
+config_file = Path.expand("../config/test.exs", __DIR__)
+Application.put_all_env(Config.Reader.read!(config_file))
+StorageEx.Config.reload!()
+
+Enum.each(Path.wildcard("test/support/**/*.exs"), &Code.require_file/1)

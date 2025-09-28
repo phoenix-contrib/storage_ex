@@ -1,4 +1,4 @@
-defmodule StorageEx.Operations.Blob.Update do
+defmodule StorageExEcto.Operations.Blob.Update do
   @moduledoc """
   Updates the blob with the given attributes inside a transaction.
   This operation is doing several things:
@@ -6,7 +6,8 @@ defmodule StorageEx.Operations.Blob.Update do
   2. Update service metadata if :content_type or :metadata changed
   """
   import Ecto.Query, only: [from: 2]
-  alias StorageEx.Models.{Blob, Attachment, BlobServiceMetadata}
+  alias StorageExEcto.Models.BlobServiceMetadata
+  alias StorageExEcto.Models.{Attachment, Blob}
 
   def call(repo, %Blob{} = blob, attrs) do
     repo.transaction(fn ->
@@ -15,8 +16,12 @@ defmodule StorageEx.Operations.Blob.Update do
       with {:ok, blob} <- repo.update(changeset) do
         touch_attachments(repo, blob)
 
-        if update_service_metadata?(blob, changeset.changes) do
-          Blob.service(blob).update_metadata(blob)
+        if update_service_metadata?(changeset.changes) do
+          StorageEx.update_metadata(
+            key: blob.key,
+            metadata: BlobServiceMetadata.from_blob(blob),
+            service_name: blob.service_name
+          )
         end
 
         {:ok, blob}
@@ -31,7 +36,7 @@ defmodule StorageEx.Operations.Blob.Update do
     |> repo.update_all(set: [updated_at: NaiveDateTime.utc_now()])
   end
 
-  defp update_service_metadata?(%Blob{} = blob, changes) do
+  defp update_service_metadata?(changes) do
     Map.has_key?(changes, :content_type) or Map.has_key?(changes, :metadata)
   end
 end

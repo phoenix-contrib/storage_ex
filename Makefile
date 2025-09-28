@@ -1,7 +1,7 @@
 # --------------------
 # PhoenixContribStorageEx Monorepo
 # --------------------
-PACKAGES := storage_ex storage_ex_s3
+PACKAGES := storage_ex storage_ex_s3 storage_ex_ecto
 PACKAGES_PATH := packages
 
 # Default target
@@ -46,7 +46,14 @@ install: ## Run Igniter install for phoenix_contrib_storage_ex
 test: ## Run tests in all packages
 	@for pkg in $(PACKAGES); do \
 		echo "==> Testing $$pkg"; \
-		(cd $(PACKAGES_PATH)/$$pkg && mix test); \
+		(cd $(PACKAGES_PATH)/$$pkg && MIX_ENV=test mix test); \
+	done
+
+.PHONY: test.watch
+test.watch: ## Run test watch in all packages
+	@for pkg in $(PACKAGES); do \
+		echo "==> Testing $$pkg"; \
+		(cd $(PACKAGES_PATH)/$$pkg && MIX_ENV=test mix test.watch); \
 	done
 
 .PHONY: dialyzer
@@ -75,6 +82,20 @@ format: ## Run mix format in all packages
 	@for pkg in $(PACKAGES); do \
 		echo "==> Formatting $$pkg"; \
 		(cd $(PACKAGES_PATH)/$$pkg && mix format); \
+	done
+
+.PHONY: format-check
+format-check: ## Check formatting in all packages
+	@for pkg in $(PACKAGES); do \
+		echo "==> Checking format for $$pkg"; \
+		(cd $(PACKAGES_PATH)/$$pkg && mix format --check-formatted); \
+	done
+
+.PHONY: docs
+docs: ## Generate documentation for all packages
+	@for pkg in $(PACKAGES); do \
+		echo "==> Generating docs for $$pkg"; \
+		(cd $(PACKAGES_PATH)/$$pkg && mix docs); \
 	done
 
 .PHONY: check
@@ -112,7 +133,11 @@ $(1).clean:
 
 .PHONY: $(1).test
 $(1).test:
-	@(cd $(PACKAGES_PATH)/$(1) && mix test)
+	@(cd $(PACKAGES_PATH)/$(1) && MIX_ENV=test mix test)
+
+.PHONY: $(1).test.watch
+$(1).test.watch:
+	@(cd $(PACKAGES_PATH)/$(1) && MIX_ENV=test mix test.watch)
 
 .PHONY: $(1).dialyzer
 $(1).dialyzer:
@@ -130,6 +155,10 @@ $(1).lint-strict:
 $(1).format:
 	@(cd $(PACKAGES_PATH)/$(1) && mix format)
 
+.PHONY: $(1).docs
+$(1).docs:
+	@(cd $(PACKAGES_PATH)/$(1) && mix docs)
+
 .PHONY: $(1).check
 $(1).check:
 	@(cd $(PACKAGES_PATH)/$(1) && mix format && mix credo --strict && mix dialyzer && mix test)
@@ -143,7 +172,7 @@ $(foreach pkg,$(PACKAGES),$(eval $(call make_package_task,$(pkg))))
 
 .PHONY: help
 help: ## Show this help
-	@echo "📦 PhoenixContribStorageEx Monorepo"
+	@echo "📦 StorageEx commands:"
 	@echo ""
 	@echo "Available global targets:"
 	@grep -E '^[a-zA-Z0-9_.-]+:.*?## .*$$' $(MAKEFILE_LIST) \

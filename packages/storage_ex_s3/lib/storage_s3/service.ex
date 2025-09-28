@@ -1,292 +1,241 @@
 defmodule StorageExS3.Service do
-  @moduledoc """
-  S3-compatible storage service.
+  @moduledoc false
 
-  This service works with any S3-compatible storage provider including:
-  - Amazon S3
-  - Cloudflare R2
-  - DigitalOcean Spaces
-  - MinIO
-  - Backblaze B2 (with S3-compatible API)
-  - And many others
+  @behaviour StorageEx.Service
 
-  The service uses the ExAws S3 client and can be configured for different providers
-  using provider presets or custom endpoint configurations.
-  """
-  use StorageEx.Service
+  alias StorageEx.Config
+  alias StorageExS3.Provider
 
-  defstruct [:config, :ex_aws_config, :provider]
+  defstruct [:provider_config, :ex_aws_config, :provider]
 
   @type t :: %__MODULE__{
-          config: map(),
+          provider_config: Provider.t(),
           ex_aws_config: keyword(),
           provider: atom()
         }
 
-  @impl true
+  @spec new(map()) :: t() | {:error, String.t()}
   def new(config) when is_map(config) do
-    with {:ok, bucket} <- fetch_required(config, :bucket),
-         {:ok, access_key_id} <- fetch_required(config, :access_key_id),
-         {:ok, secret_access_key} <- fetch_required(config, :secret_access_key) do
-
+    with {:ok, bucket} <- Config.fetch_required_option(config, :bucket),
+         {:ok, access_key_id} <- Config.fetch_required_option(config, :access_key_id),
+         {:ok, secret_access_key} <- Config.fetch_required_option(config, :secret_access_key) do
       provider = Map.get(config, :provider, :aws)
-      region = Map.get(config, :region, "us-east-1")
 
-      # Get provider-specific configuration
-      provider_config = get_provider_config(provider, config)
+      # ask provider module to build its config (host + any special checks)
+      case Provider.build(provider, Map.put(config, :bucket, bucket)) do
+        {:ok, provider_config} ->
+          ex_aws_config =
+            [
+              access_key_id: access_key_id,
+              secret_access_key: secret_access_key,
+              region: Map.get(config, :region, "us-east-1")
+            ] ++ Provider.to_opts(provider_config)
 
-      ex_aws_config = [
-        access_key_id: access_key_id,
-        secret_access_key: secret_access_key,
-        region: region
-      ] ++ provider_config
+          %__MODULE__{
+            provider_config: provider_config,
+            ex_aws_config: ex_aws_config,
+            provider: provider
+          }
 
-      %__MODULE__{
-        config: %{
-          bucket: bucket,
-          provider: provider,
-          region: region,
-          public_url_template: Map.get(config, :public_url_template)
-        },
-        ex_aws_config: ex_aws_config,
-        provider: provider
-      }
+        {:error, reason} ->
+          {:error, "Invalid provider config: #{inspect(reason)}"}
+      end
     else
       {:error, field} ->
         {:error, "Missing required configuration field: #{field}"}
     end
   end
 
-  @doc """
-  Stores a file (binary data) at the given key.
+  @typedoc """
+  Options for uploading objects to S3.
+
+  Supported keys:
+    * `:acl` — canned ACL string ("private", "public-read", etc.)
+    * `:content_type` — MIME type of the object
+    * `:metadata` — map of user-defined metadata
+    * `:cache_control` — cache control header
+    * `:content_disposition` — content disposition header
+    * `:expires` — expiry header
+
+  Other keys are passed through to ExAws.S3.
   """
-  def put(%__MODULE__{config: %{bucket: bucket}, ex_aws_config: aws_config}, key, binary) when is_binary(binary) do
-    ExAws.S3.put_object(bucket, key, binary)
-    |> ExAws.request(aws_config)
-    |> case do
-      {:ok, _response} -> {:ok, key}
+  @type upload_opts ::
+          [
+            {:acl, String.t()}
+            | {:content_type, String.t()}
+            | {:metadata, %{String.t() => String.t()}}
+            | {:cache_control, String.t()}
+            | {:content_disposition, String.t()}
+            | {:expires, String.t()}
+          ]
+  @impl true
+  @spec upload(t(), String.t(), iodata() | Enumerable.t() | Path.t(), upload_opts) ::
+          {:ok, String.t()} | {:error, term()}
+  def upload(%__MODULE__{provider_config: %{bucket: bucket}, ex_aws_config: aws}, key, data, opts) do
+    request =
+      cond do
+        is_binary(data) ->
+          ExAws.S3.put_object(bucket, key, data, opts)
+
+        match?(%Stream{}, data) ->
+          ExAws.S3.upload(data, bucket, key, opts)
+
+        is_binary(data) and File.regular?(data) ->
+          data
+          |> ExAws.S3.Upload.stream_file()
+          |> ExAws.S3.upload(bucket, key, opts)
+
+        true ->
+          raise ArgumentError,
+                "Unsupported upload data type: #{inspect(data)}. " <>
+                  "Expected binary, stream, or file path."
+      end
+
+    case ExAws.request(request, aws) do
+      {:ok, %{status_code: 200}} -> {:ok, key}
+      # multipart upload success
+      {:ok, :done} -> {:ok, key}
+      {:ok, _} -> {:ok, key}
       {:error, reason} -> {:error, reason}
     end
   end
 
-  @doc """
-  Stores a file with additional options (content type, metadata, etc.).
-  """
-  def put(%__MODULE__{config: %{bucket: bucket}, ex_aws_config: aws_config}, key, binary, opts) when is_binary(binary) do
-    put_request = ExAws.S3.put_object(bucket, key, binary)
+  @impl true
+  def update_metadata(
+        %__MODULE__{provider_config: %{bucket: bucket}, ex_aws_config: aws},
+        key,
+        metadata
+      ) do
+    req = ExAws.S3.put_object_copy(bucket, key, bucket, key, metadata: metadata.custom || %{})
 
-    put_request =
-      put_request
-      |> maybe_add_content_type(opts)
-      |> maybe_add_metadata(opts)
-      |> maybe_add_acl(opts)
-
-    put_request
-    |> ExAws.request(aws_config)
-    |> case do
-      {:ok, _response} -> {:ok, key}
+    case ExAws.request(req, aws) do
+      {:ok, _} -> :ok
       {:error, reason} -> {:error, reason}
     end
   end
 
-  @doc """
-  Reads a file by key.
-  """
-  def get(%__MODULE__{config: %{bucket: bucket}, ex_aws_config: aws_config}, key) do
-    ExAws.S3.get_object(bucket, key)
-    |> ExAws.request(aws_config)
-    |> case do
+  # --- Download ---
+
+  @impl true
+  def download(%__MODULE__{provider_config: %{bucket: bucket}, ex_aws_config: aws}, key) do
+    case ExAws.S3.get_object(bucket, key) |> ExAws.request(aws) do
       {:ok, %{body: body}} -> {:ok, body}
       {:error, {:http_error, 404, _}} -> {:error, :enoent}
       {:error, reason} -> {:error, reason}
     end
   end
 
-  @doc """
-  Deletes a file by key.
-  """
-  def delete(%__MODULE__{config: %{bucket: bucket}, ex_aws_config: aws_config}, key) do
-    ExAws.S3.delete_object(bucket, key)
-    |> ExAws.request(aws_config)
-    |> case do
-      {:ok, _response} -> :ok
+  @impl true
+  def download_chunk(
+        %__MODULE__{provider_config: %{bucket: bucket}, ex_aws_config: aws},
+        key,
+        range
+      ) do
+    range_header = "bytes=#{range.first}-#{range.last}"
+
+    case ExAws.S3.get_object(bucket, key, range: range_header) |> ExAws.request(aws) do
+      {:ok, %{body: body}} -> {:ok, body}
       {:error, reason} -> {:error, reason}
     end
   end
 
-  @doc """
-  Checks if a file exists for the given key.
-  """
-  def exists?(%__MODULE__{config: %{bucket: bucket}, ex_aws_config: aws_config}, key) do
-    ExAws.S3.head_object(bucket, key)
-    |> ExAws.request(aws_config)
-    |> case do
-      {:ok, _response} -> true
-      {:error, {:http_error, 404, _}} -> false
-      {:error, _reason} -> false
-    end
-  end
+  # --- File management ---
 
-  @doc """
-  Returns a public URL for the given key.
+  @impl true
+  def compose(
+        %__MODULE__{provider_config: %{bucket: bucket}, ex_aws_config: aws} = service,
+        source_keys,
+        dest_key,
+        _opts
+      ) do
+    results =
+      Enum.map(source_keys, fn key ->
+        ExAws.S3.get_object(bucket, key) |> ExAws.request(aws)
+      end)
 
-  Uses provider-specific URL patterns or a custom template if configured.
-  """
-  def url(%__MODULE__{config: config}, key) do
-    case config.public_url_template do
-      nil -> build_provider_url(config, key)
-      template -> String.replace(template, "{key}", key)
-    end
-  end
+    if Enum.all?(results, &match?({:ok, _}, &1)) do
+      body =
+        results
+        |> Enum.map(fn {:ok, %{body: b}} -> b end)
+        |> IO.iodata_to_binary()
 
-  @doc """
-  Generates a presigned URL for temporary access to an object.
-  """
-  def presigned_url(%__MODULE__{config: %{bucket: bucket}, ex_aws_config: aws_config}, key, opts \\ []) do
-    expires_in = Keyword.get(opts, :expires_in, 3600) # 1 hour default
-
-    ExAws.S3.presigned_url(aws_config, :get, bucket, key, expires_in: expires_in)
-    |> case do
-      {:ok, url} -> {:ok, url}
-      error -> error
+      upload(service, dest_key, body, [])
+    else
+      {:error, :compose_failed}
     end
   end
 
   @impl true
-  def update_metadata(%__MODULE__{config: %{bucket: bucket}, ex_aws_config: aws_config}, key, metadata) do
-    # For S3, we can update object metadata using copy_object with new metadata
-    ExAws.S3.put_object_copy(bucket, key, bucket, key, metadata: metadata.custom || %{})
-    |> ExAws.request(aws_config)
-    |> case do
-      {:ok, _response} -> :ok
+  def delete(%__MODULE__{provider_config: %{bucket: bucket}, ex_aws_config: aws}, key) do
+    case ExAws.S3.delete_object(bucket, key) |> ExAws.request(aws) do
+      {:ok, _} -> :ok
       {:error, reason} -> {:error, reason}
     end
   end
 
-  # --- Provider-specific configurations ---
+  @impl true
+  def delete_prefixed(%__MODULE__{provider_config: %{bucket: bucket}, ex_aws_config: aws}, prefix) do
+    # S3 requires listing and then deleting objects
+    objects =
+      case ExAws.S3.list_objects(bucket, prefix: prefix) |> ExAws.request(aws) do
+        {:ok, %{body: %{contents: list}}} ->
+          Enum.map(list, & &1.key)
 
-  defp get_provider_config(:aws, _config) do
-    [
-      scheme: "https://",
-      host: "s3.amazonaws.com",
-      port: 443
-    ]
-  end
+        _ ->
+          []
+      end
 
-  defp get_provider_config(:cloudflare_r2, config) do
-    account_id = Map.fetch!(config, :account_id)
-    [
-      scheme: "https://",
-      host: "#{account_id}.r2.cloudflarestorage.com",
-      port: 443
-    ]
-  end
-
-  defp get_provider_config(:digitalocean_spaces, config) do
-    region = Map.get(config, :region, "nyc3")
-    [
-      scheme: "https://",
-      host: "#{region}.digitaloceanspaces.com",
-      port: 443
-    ]
-  end
-
-  defp get_provider_config(:minio, config) do
-    endpoint = Map.fetch!(config, :endpoint)
-    [scheme, host_port] = String.split(endpoint, "://", parts: 2)
-
-    case String.split(host_port, ":", parts: 2) do
-      [host, port] ->
-        [
-          scheme: "#{scheme}://",
-          host: host,
-          port: String.to_integer(port)
-        ]
-      [host] ->
-        port = if scheme == "https", do: 443, else: 80
-        [
-          scheme: "#{scheme}://",
-          host: host,
-          port: port
-        ]
+    if objects == [] do
+      :ok
+    else
+      case ExAws.S3.delete_multiple_objects(bucket, objects) |> ExAws.request(aws) do
+        {:ok, _} -> :ok
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
 
-  defp get_provider_config(:custom, config) do
-    endpoint = Map.fetch!(config, :endpoint)
-    [scheme, host_port] = String.split(endpoint, "://", parts: 2)
-
-    case String.split(host_port, ":", parts: 2) do
-      [host, port] ->
-        [
-          scheme: "#{scheme}://",
-          host: host,
-          port: String.to_integer(port)
-        ]
-      [host] ->
-        port = if scheme == "https", do: 443, else: 80
-        [
-          scheme: "#{scheme}://",
-          host: host,
-          port: port
-        ]
+  @impl true
+  def exists?(%__MODULE__{provider_config: %{bucket: bucket}, ex_aws_config: aws}, key) do
+    case ExAws.S3.head_object(bucket, key) |> ExAws.request(aws) do
+      {:ok, _} -> true
+      {:error, {:http_error, 404, _}} -> false
+      {:error, _} -> false
     end
   end
 
-  # --- URL builders ---
+  # --- URL helpers ---
 
-  defp build_provider_url(%{provider: :aws, bucket: bucket, region: region}, key) do
-    "https://#{bucket}.s3.#{region}.amazonaws.com/#{key}"
+  @impl true
+  def url(%__MODULE__{provider_config: provider}, key, _opts) do
+    Provider.url(provider, key)
   end
 
-  defp build_provider_url(%{provider: :cloudflare_r2, bucket: bucket}, key) do
-    # R2 public URLs need custom domain configuration
-    # This is a placeholder - users should configure public_url_template
-    "https://your-r2-domain.com/#{key}"
-  end
+  @impl true
+  def url_for_direct_upload(
+        %__MODULE__{provider_config: %{bucket: bucket}, ex_aws_config: aws},
+        key,
+        opts
+      ) do
+    expires_in = Keyword.get(opts, :expires_in, 3600)
 
-  defp build_provider_url(%{provider: :digitalocean_spaces, bucket: bucket, region: region}, key) do
-    "https://#{bucket}.#{region}.digitaloceanspaces.com/#{key}"
-  end
-
-  defp build_provider_url(%{provider: :minio}, _key) do
-    # MinIO URLs are highly customizable, users should provide public_url_template
-    raise "MinIO requires public_url_template configuration"
-  end
-
-  defp build_provider_url(%{provider: :custom}, _key) do
-    raise "Custom provider requires public_url_template configuration"
-  end
-
-  # --- Private helpers ---
-
-  defp fetch_required(config, key) do
-    case Map.fetch(config, key) do
-      {:ok, value} when is_binary(value) and value != "" -> {:ok, value}
-      {:ok, _} -> {:error, key}
-      :error -> {:error, key}
+    case ExAws.S3.presigned_url(aws, :put, bucket, key, expires_in: expires_in) do
+      {:ok, url} -> {:ok, url}
+      {:error, reason} -> {:error, reason}
     end
   end
 
-  defp maybe_add_content_type(request, opts) do
-    case Keyword.get(opts, :content_type) do
-      nil -> request
-      content_type -> ExAws.S3.put_object(request, [], content_type: content_type)
-    end
+  @impl true
+  def headers_for_direct_upload(_service, _key, opts) do
+    %{
+      "content-type" => Keyword.get(opts, :content_type, "application/octet-stream"),
+      "content-length" => Keyword.get(opts, :content_length, 0),
+      "content-md5" => Keyword.get(opts, :checksum, "")
+    }
   end
 
-  defp maybe_add_metadata(request, opts) do
-    case Keyword.get(opts, :metadata) do
-      nil -> request
-      metadata when is_map(metadata) ->
-        ExAws.S3.put_object(request, [], metadata: metadata)
-    end
-  end
-
-  defp maybe_add_acl(request, opts) do
-    case Keyword.get(opts, :acl) do
-      nil -> request
-      acl -> ExAws.S3.put_object(request, [], acl: acl)
-    end
+  @impl true
+  def download_stream(%__MODULE__{}, _key) do
+    {:error, :not_implemented}
   end
 end

@@ -3,7 +3,9 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - 'storage_ex-v*'
+      - 'storage_ex_s3-v*'
+      - 'storage_ex_ecto-v*'
 
 env:
   MIX_ENV: prod
@@ -28,28 +30,49 @@ jobs:
         uses: actions/cache@v3
         with:
           path: |
-            deps
-            _build
+            packages/*/deps
+            packages/*/_build
           key: ${{ runner.os }}-mix-release-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
             ${{ runner.os }}-mix-release-
 
-      - name: Install dependencies
+      - name: Install Hex and Rebar
         run: |
           mix local.hex --force
           mix local.rebar --force
-          mix deps.get
+
+      - name: Install dependencies
+        run: make deps
 
       - name: Run tests
-        run: mix test
+        run: make test
 
       - name: Build documentation
-        run: mix docs
+        run: |
+          cd packages/storage_ex && mix docs
+          cd ../storage_ex_s3 && mix docs
+          cd ../storage_ex_ecto && mix docs
+
+      - name: Determine package to publish
+        id: package
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          if [[ $TAG == storage_ex-* ]]; then
+            echo "package=storage_ex" >> $GITHUB_OUTPUT
+          elif [[ $TAG == storage_ex_s3-* ]]; then
+            echo "package=storage_ex_s3" >> $GITHUB_OUTPUT
+          elif [[ $TAG == storage_ex_ecto-* ]]; then
+            echo "package=storage_ex_ecto" >> $GITHUB_OUTPUT
+          else
+            echo "Unknown tag format: $TAG"
+            exit 1
+          fi
 
       - name: Publish to Hex
         env:
           HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
         run: |
+          cd packages/${{ steps.package.outputs.package }}
           mix hex.publish --yes
 
       - name: Create GitHub Release
@@ -81,23 +104,28 @@ jobs:
         uses: actions/cache@v3
         with:
           path: |
-            deps
-            _build
+            packages/*/deps
+            packages/*/_build
           key: ${{ runner.os }}-mix-docs-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
             ${{ runner.os }}-mix-docs-
 
-      - name: Install dependencies
+      - name: Install Hex and Rebar
         run: |
           mix local.hex --force
           mix local.rebar --force
-          mix deps.get
+
+      - name: Install dependencies
+        run: make deps
 
       - name: Build documentation
-        run: mix docs
+        run: |
+          cd packages/storage_ex && mix docs
+          cd ../storage_ex_s3 && mix docs
+          cd ../storage_ex_ecto && mix docs
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./doc
+          publish_dir: ./packages/storage_ex/doc

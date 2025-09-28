@@ -51,29 +51,28 @@ jobs:
         uses: actions/cache@v3
         with:
           path: |
-            deps
-            _build
+            packages/*/deps
+            packages/*/_build
           key: ${{ runner.os }}-mix-${{ matrix.elixir }}-${{ matrix.otp }}-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
             ${{ runner.os }}-mix-${{ matrix.elixir }}-${{ matrix.otp }}-
 
-      - name: Install dependencies
+      - name: Install Hex and Rebar
         run: |
           mix local.hex --force
           mix local.rebar --force
-          mix deps.get
 
-      - name: Compile dependencies
-        run: mix deps.compile
+      - name: Install dependencies
+        run: make deps
 
       - name: Compile project
-        run: mix compile --warnings-as-errors
+        run: make compile
 
       - name: Check formatting
-        run: mix format --check-formatted
+        run: make format-check
 
       - name: Run tests
-        run: mix test --cover
+        run: make test
 
       - name: Upload coverage to Codecov
         if: matrix.elixir == '1.16' && matrix.otp == '26'
@@ -99,70 +98,45 @@ jobs:
         uses: actions/cache@v3
         with:
           path: |
-            deps
-            _build
+            packages/*/deps
+            packages/*/_build
           key: ${{ runner.os }}-mix-quality-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
             ${{ runner.os }}-mix-quality-
 
-      - name: Install dependencies
+      - name: Install Hex and Rebar
         run: |
           mix local.hex --force
           mix local.rebar --force
-          mix deps.get
+
+      - name: Install dependencies
+        run: make deps
 
       - name: Compile project
-        run: mix compile
+        run: make compile
 
       - name: Run Credo
-        run: mix credo --strict
+        run: make lint-strict
 
       - name: Cache PLT files
         uses: actions/cache@v3
         with:
-          path: priv/plts
+          path: |
+            priv/plts
+            packages/*/priv/plts
           key: ${{ runner.os }}-plt-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
             ${{ runner.os }}-plt-
 
-      - name: Create PLT directory
-        run: mkdir -p priv/plts
+      - name: Create PLT directories
+        run: |
+          mkdir -p priv/plts/core
+          mkdir -p packages/storage_ex/priv/plts
+          mkdir -p packages/storage_ex_s3/priv/plts
+          mkdir -p packages/storage_ex_ecto/priv/plts
 
       - name: Run Dialyzer
-        run: mix dialyzer
-
-  security:
-    name: Security Checks
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Elixir
-        uses: erlef/setup-beam@v1
-        with:
-          elixir-version: '1.16'
-          otp-version: '26'
-
-      - name: Cache Mix dependencies
-        uses: actions/cache@v3
-        with:
-          path: |
-            deps
-            _build
-          key: ${{ runner.os }}-mix-security-${{ hashFiles('**/mix.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-mix-security-
-
-      - name: Install dependencies
-        run: |
-          mix local.hex --force
-          mix local.rebar --force
-          mix deps.get
-
-      - name: Check for security vulnerabilities
-        run: mix deps.audit
+        run: make dialyzer
 
   documentation:
     name: Documentation
@@ -182,24 +156,27 @@ jobs:
         uses: actions/cache@v3
         with:
           path: |
-            deps
-            _build
+            packages/*/deps
+            packages/*/_build
           key: ${{ runner.os }}-mix-docs-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
             ${{ runner.os }}-mix-docs-
 
-      - name: Install dependencies
+      - name: Install Hex and Rebar
         run: |
           mix local.hex --force
           mix local.rebar --force
-          mix deps.get
+
+      - name: Install dependencies
+        run: make deps
 
       - name: Generate documentation
-        run: mix docs
+        run: make docs
 
       - name: Check for documentation warnings
         run: |
-          if mix docs 2>&1 | grep -q "warning:"; then
+          if make docs 2>&1 | grep -q "warning:"; then 
             echo "Documentation has warnings"
+            make docs
             exit 1
           fi

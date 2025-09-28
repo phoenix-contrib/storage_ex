@@ -12,7 +12,6 @@ defmodule PhoenixContribStorageEx.MixProject do
       name: "StorageEx",
       version: @version,
       start_permanent: Mix.env() == :prod,
-
       deps: deps(),
       description: description(),
       package: package(),
@@ -54,14 +53,12 @@ defmodule PhoenixContribStorageEx.MixProject do
 
   defp deps do
     [
-      {:ecto, "~> 3.10"},
-      {:ecto_sql, "~> 3.10"},
       {:phoenix, "~> 1.7"},
       {:plug, "~> 1.14"},
       {:jason, "~> 1.4"},
       {:mime, "~> 2.0"},
+      {:telemetry, "~> 1.0"},
       {:igniter, "~> 0.6", optional: true}
     ] ++ MixHelpers.deps()
   end
 end
-

@@ -5,10 +5,11 @@ unless Code.ensure_loaded?(MixHelpers) do
     """
 
     @default_deps [
-      {:dialyxir, "~> 1.4", only: [:dev], runtime: false},
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:excoveralls, "~> 0.17", only: :test},
-      {:ex_doc, "~> 0.34", only: :dev, runtime: false}
+      {:mix_test_watch, "~> 1.3.0", only: [:dev, :test], runtime: false},
+      {:ex_doc, "~> 0.34", only: [:dev, :test], runtime: false}
     ]
 
     @doc """
@@ -42,8 +43,14 @@ unless Code.ensure_loaded?(MixHelpers) do
         elixir: "~> 1.14",
         test_coverage: [tool: ExCoveralls],
         dialyzer: [
-          plt_file: {:no_warn, "../../priv/plts/dialyzer.plt"},
-          plt_add_apps: [:mix, :ex_unit]
+          plt_file: {:no_warn, "priv/plts/dialyzer.plt"},
+          plt_add_apps: [:mix, :ex_unit],
+          plt_core_path: "../../priv/plts/core",
+          plt_local_path: "priv/plts",
+          no_umbrella: true
+        ],
+        preferred_cli_env: [
+          "test.watch": :test
         ]
       ]
     end

@@ -44,7 +44,12 @@ ehthumbs.db
 Thumbs.db
 
 # Dialyzer PLT files
+# (root shared cache and package-specific PLTs)
 /priv/plts/
+/packages/*/priv/plts/
+
+# Generated documentation
+/packages/*/doc/
 
 # Coverage reports
 /cover/
@@ -54,3 +59,6 @@ lcov.info
 
 # Test artifacts
 .test_artifacts/
+
+# Inspiration. Rails source code for the AI to check things.
+inspiration/
