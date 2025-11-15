@@ -1,183 +1,177 @@
 defmodule StorageEx do
   @moduledoc """
-  StorageEx facade macro with caching and real service initialization.
+  Public API for StorageEx.
 
-  ## Setup
+  ## Examples
 
-  To use `StorageEx`, define a facade module in your application:
+      # Upload a file to the default service
+      StorageEx.upload("avatar.png", File.read!("avatar.png"))
 
-      defmodule MyApp.StorageEx do
-        use StorageEx, otp_app: :my_app
-      end
+      # Upload with content type and ACL
+      StorageEx.upload("avatar.png", File.read!("avatar.png"),
+        content_type: "image/png",
+        acl: "public-read"
+      )
 
-  This generates helpers such as `MyApp.Storage.repo/0`, `MyApp.Storage.services/0`,
-  and `MyApp.StorageEx.get_service!/1`.
+      # Download a file
+      {:ok, binary} = StorageEx.download("avatar.png")
 
-  ## Configuration
+      # Download as a stream (for large files)
+      {:ok, stream} = StorageEx.download_stream("large_file.mp4")
+      stream |> Stream.into(File.stream!("output.mp4")) |> Stream.run()
 
-  All configuration should live in `runtime.exs`, **not** in `config.exs`.
-  This ensures your application works correctly in releases and can read values
-  from the environment at startup.
+      # Check existence
+      StorageEx.exists?("avatar.png")
 
-  ### Shape of the config
+      # Delete a file
+      StorageEx.delete("avatar.png")
 
-  Each facade (like `MyApp.StorageEx`) expects configuration under
-  `config :my_app, MyApp.StorageEx`.
-  The config should include:
+      # Compose multiple files into one
+      StorageEx.compose(["part1.bin", "part2.bin"], "complete.bin")
 
-    * `:repo` — your Ecto repo module (required if you use database tables)
-    * `:services` — a map of named services
-    * `:service` — the default service name to use (optional, defaults to `:local`)
+      # Generate a signed URL
+      {:ok, url} = StorageEx.url_for_direct_upload("avatar.png", expires_in: 600)
 
-  Example `runtime.exs` with **S3-compatible service** (Cloudflare R2):
-
-      config :my_app, MyApp.StorageEx,
-        repo: MyApp.Repo,
-        services: %{
-          r2: %{
-            service: StorageExS3.Service,
-            configuration: %{
-              provider: :cloudflare_r2,
-              account_id: System.fetch_env!("CLOUDFLARE_ACCOUNT_ID"),
-              bucket: System.fetch_env!("R2_BUCKET"),
-              access_key_id: System.fetch_env!("R2_ACCESS_KEY_ID"),
-              secret_access_key: System.fetch_env!("R2_SECRET_ACCESS_KEY")
-            }
-          }
-        }
-
-  By default, if you don't configure anything, a local service will be added automatically:
-
-      local: %{
-        service: StorageEx.Services.Local,
-        configuration: %{root: "priv/storage"}
-      }
-
-  ### Default service
-
-  You can configure which service to use by default.
-  For example, in `prod.exs`:
-
-      config :my_app, MyApp.StorageEx, service: :r2
-
-  Then calls like `MyApp.StorageEx.default_service/0` or higher-level helpers will use that bucket.
-
-  In development and test, you may choose to rely on the default local service,
-  which is always present.
-
-  ## Example usage
-
-      # Write a file to the default service
-      MyApp.StorageEx.get_service!(MyApp.StorageEx.default_service())
-      |> StorageEx.Services.put_file("hello.txt", "hello world")
-
-      # Explicitly fetch a named service
-      s3 = MyApp.StorageEx.get_service!(:my_s3_bucket)
-      StorageEx.Services.put_file(s3, "avatar.png", File.read!("avatar.png"))
+      # Update metadata
+      StorageEx.update_metadata(key: "avatar.png", metadata: %{foo: "bar"})
   """
 
-  defmacro __using__(opts) do
-    otp_app = Keyword.fetch!(opts, :otp_app)
+  alias StorageEx.{Config, Dispatcher}
 
-    quote bind_quoted: [otp_app: otp_app] do
-      @otp_app otp_app
+  # --- Upload ---
 
-      @doc """
-      Returns the configured repo module.
-      """
-      def repo do
-        get_config().repo ||
-          raise "StorageEx repo not configured. Please set `config #{@otp_app}, #{__MODULE__}, repo: MyApp.Repo`"
-      end
+  @doc "Upload binary/stream/path to the given key."
+  def upload(key, data, opts \\ []) do
+    service = get_service(opts)
+    Dispatcher.call(:upload, [service, key, data, opts])
+  end
 
-      @doc """
-      Returns the map of initialized services.
-      """
-      def services do
-        get_config().services
-      end
+  # --- Download ---
 
-      @doc """
-      Returns the default service name.
-      """
-      def default_service do
-        get_config().service
-      end
+  @doc "Download the full file content."
+  def download(key, opts \\ []) do
+    service = get_service(opts)
+    Dispatcher.call(:download, [service, key])
+  end
 
-      @doc """
-      Fetches a specific service struct by name (atom).
-      Raises if the service is missing.
-      """
-      def get_service!(name) when is_atom(name) do
-        case services()[name] do
-          nil -> raise ArgumentError, "Unknown storage service #{inspect(name)}"
-          service -> service
-        end
-      end
+  @doc "Download a byte range from the file."
+  def download_chunk(key, range, opts \\ []) do
+    service = get_service(opts)
+    Dispatcher.call(:download_chunk, [service, key, range])
+  end
 
-      @doc """
-      Reloads the config from application env (useful in tests).
-      """
-      def reload_config do
-        :persistent_term.erase({__MODULE__, :config})
-        :ok
-      end
+  @doc "Download the file as a stream (5MB chunks by default)."
+  def download_stream(key, opts \\ []) do
+    service = get_service(opts)
+    Dispatcher.call(:download_stream, [service, key])
+  end
 
-      # Cached config in persistent_term
-      defp get_config do
-        case :persistent_term.get({__MODULE__, :config}, :not_set) do
-          :not_set ->
-            cfg =
-              Application.get_env(@otp_app, __MODULE__, [])
-              |> normalize_config()
-              |> build_services()
+  # --- Metadata ---
 
-            :persistent_term.put({__MODULE__, :config}, cfg)
-            cfg
+  @doc "Update metadata for a file on the provider."
+  def update_metadata(opts) do
+    service = get_service(opts)
+    Dispatcher.call(:update_metadata, [service, opts[:key], opts[:metadata]])
+  end
 
-          cfg ->
-            cfg
-        end
-      end
+  # --- File management ---
 
-      defp normalize_config(opts) do
-        services = Map.get(opts, :services, %{})
+  @doc "Compose multiple source files into a single destination file."
+  def compose(source_keys, destination_key, opts \\ []) do
+    service = get_service(opts)
+    Dispatcher.call(:compose, [service, source_keys, destination_key, opts])
+  end
 
-        services =
-          if Map.has_key?(services, :local) do
-            services
-          else
-            Map.put(services, :local, %{
-              service: StorageEx.Services.Local,
-              configuration: %{root: "priv/storage"}
-            })
-          end
+  @doc "Delete a file."
+  def delete(key, opts \\ []) do
+    service = get_service(opts)
+    Dispatcher.call(:delete, [service, key])
+  end
 
-        %{
-          repo: Keyword.get(opts, :repo),
-          services: services,
-          service: Keyword.get(opts, :service, :local)
-        }
-      end
+  @doc "Delete all files under the given prefix."
+  def delete_prefixed(prefix, opts \\ []) do
+    service = get_service(opts)
+    Dispatcher.call(:delete_prefixed, [service, prefix])
+  end
 
-      defp build_services(%{services: configs} = cfg) do
-        services =
-          configs
-          |> Enum.map(fn {name, %{service: mod, configuration: config}} ->
-            case mod.new(config) do
-              %^mod{} = service ->
-                {name, service}
+  @doc "Check if a file exists."
+  def exists?(key, opts \\ []) do
+    service = get_service(opts)
+    Dispatcher.call(:exists?, [service, key])
+  end
 
-              {:error, reason} ->
-                IO.warn("Skipping misconfigured service #{name}: #{inspect(reason)}")
-                nil
-            end
-          end)
-          |> Enum.reject(&is_nil/1)
-          |> Map.new()
+  # --- URL helpers ---
 
-        %{cfg | services: services}
-      end
-    end
+  @doc """
+  Generate a signed URL for downloading the given key.
+
+  ## Options
+
+    * `:endpoint` - Phoenix endpoint module (optional if configured globally)
+    * `:expires_in` - URL expiration in seconds (default: 300)
+    * `:filename` - Original filename
+    * `:disposition` - `:inline` or `:attachment` (default: `:inline`)
+    * `:content_type` - MIME type
+
+  Configure endpoint globally:
+
+      config :storage_ex, endpoint: MyAppWeb.Endpoint
+
+  ## Examples
+
+      # Using configured endpoint
+      StorageEx.url("avatar.png", filename: "avatar.png")
+
+      # Overriding endpoint
+      StorageEx.url("avatar.png", endpoint: MyAppWeb.Endpoint, filename: "avatar.png")
+  """
+  def url(key, opts \\ []) do
+    service = get_service(opts)
+    Dispatcher.call(:url, [service, key, opts])
+  end
+
+  @doc """
+  Generate a signed URL for direct client upload.
+
+  ## Options
+
+    * `:endpoint` - Phoenix endpoint module (optional if configured globally)
+    * `:expires_in` - URL expiration in seconds (default: 300)
+    * `:content_type` - Expected MIME type
+    * `:content_length` - Expected file size in bytes
+    * `:checksum` - Expected MD5 checksum (Base64 encoded)
+
+  Configure endpoint globally:
+
+      config :storage_ex, endpoint: MyAppWeb.Endpoint
+
+  ## Examples
+
+      # Using configured endpoint
+      {:ok, url} = StorageEx.url_for_direct_upload("avatar.png",
+        content_type: "image/png",
+        content_length: 1024
+      )
+
+      # Overriding endpoint
+      {:ok, url} = StorageEx.url_for_direct_upload("avatar.png",
+        endpoint: MyAppWeb.Endpoint,
+        content_type: "image/png",
+        content_length: 1024
+      )
+  """
+  def url_for_direct_upload(key, opts \\ []) do
+    service = get_service(opts)
+    Dispatcher.call(:url_for_direct_upload, [service, key, opts])
+  end
+
+  @doc "Return headers required for direct upload."
+  def headers_for_direct_upload(key, opts \\ []) do
+    service = get_service(opts)
+    Dispatcher.call(:headers_for_direct_upload, [service, key, opts])
+  end
+
+  defp get_service(opts) do
+    Config.get_service!(Keyword.get(opts, :service_name))
   end
 end

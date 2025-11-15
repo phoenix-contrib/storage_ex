@@ -1,4 +1,4 @@
-defmodule StorageEx.Models.Blob do
+defmodule StorageExEcto.Models.Blob do
   @moduledoc """
   A blob is a record that contains the metadata about a file and a key for where that file resides on the service.
   Blobs can be created in two ways:
@@ -20,8 +20,10 @@ defmodule StorageEx.Models.Blob do
   use Ecto.Schema
   import Ecto.Changeset
   import Ecto.Query
-  alias StorageEx.Models.BlobMetadata
-  alias StorageEx.Models.Operations.Blob.Update, as: BlobUpdate
+  import StorageEx.Config, only: [default_service: 0]
+  import StorageExEcto.Config, only: [repo: 0]
+  alias StorageExEcto.Models.{Attachment, BlobMetadata, VariantRecord}
+  alias StorageExEcto.Operations.Blob.Update, as: BlobUpdate
 
   @type t :: %__MODULE__{
           id: term(),
@@ -48,9 +50,8 @@ defmodule StorageEx.Models.Blob do
       on_replace: :update
     )
 
-    # TODO: Implement these models
-    has_many(:attachments, StorageEx.Models.Attachment, foreign_key: :blob_id)
-    has_many(:variant_records, StorageEx.Models.VariantRecord, foreign_key: :blob_id)
+    has_many(:attachments, Attachment, foreign_key: :blob_id)
+    has_many(:variant_records, VariantRecord, foreign_key: :blob_id)
 
     timestamps()
   end
@@ -65,7 +66,7 @@ defmodule StorageEx.Models.Blob do
       :byte_size,
       :checksum
     ])
-    |> put_metadata(attrs)
+    |> put_metadata()
     |> validate_required([:key, :filename, :service_name, :byte_size])
     |> put_service_default()
     # Rails: validates checksum unless composed
@@ -74,23 +75,9 @@ defmodule StorageEx.Models.Blob do
   end
 
   def update(blob, attrs) do
-    BlobUpdate.call(StorageEx.repo(), blob, attrs)
+    BlobUpdate.call(repo(), blob, attrs)
   end
 
-  @spec service(t()) :: StorageEx.Service.t()
-  def service(%__MODULE__{service_name: name}) do
-    StorageEx.get_service!(name)
-  end
-
-  @doc """
-  Returns a query that selects blobs that have no attachments.
-  This is helpful to remove orphaned blobs that are no longer referenced by any record.
-
-  Example:
-
-      iex> StorageEx.Repo.all(StorageEx.Models.Blob.unattached())
-      [%StorageEx.Models.Blob{}, ...]
-  """
   def unattached(query \\ __MODULE__) do
     from(b in query,
       left_join: a in assoc(b, :attachments),
@@ -110,19 +97,25 @@ defmodule StorageEx.Models.Blob do
   @doc """
   Returns true if the content_type of this blob is in the image range, like image/png.
   """
-  def image?(%__MODULE__{content_type: ct}) when is_binary(ct), do: String.starts_with?(ct, "image")
+  def image?(%__MODULE__{content_type: ct}) when is_binary(ct),
+    do: String.starts_with?(ct, "image")
+
   def image?(_), do: false
 
   @doc """
   Returns true if the content_type of this blob is in the audio range, like audio/mpeg.
   """
-  def audio?(%__MODULE__{content_type: ct}) when is_binary(ct), do: String.starts_with?(ct, "audio")
+  def audio?(%__MODULE__{content_type: ct}) when is_binary(ct),
+    do: String.starts_with?(ct, "audio")
+
   def audio?(_), do: false
 
   @doc """
   Returns true if the content_type of this blob is in the video range, like video/mp4.
   """
-  def video?(%__MODULE__{content_type: ct}) when is_binary(ct), do: String.starts_with?(ct, "video")
+  def video?(%__MODULE__{content_type: ct}) when is_binary(ct),
+    do: String.starts_with?(ct, "video")
+
   def video?(_), do: false
 
   @doc """
@@ -171,12 +164,12 @@ defmodule StorageEx.Models.Blob do
 
   defp put_service_default(changeset) do
     case get_field(changeset, :service_name) do
-      nil -> put_change(changeset, :service_name, StorageEx.default_service())
+      nil -> put_change(changeset, :service_name, default_service())
       _ -> changeset
     end
   end
 
-  defp put_metadata(changeset, attrs) do
+  defp put_metadata(changeset) do
     changeset
     |> cast_embed(:metadata, with: &BlobMetadata.changeset/2, required: false)
     |> ensure_metadata()

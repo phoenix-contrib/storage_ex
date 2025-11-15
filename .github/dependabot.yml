@@ -1,0 +1,28 @@
+version: 2
+updates:
+  # Monitor GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  # Monitor Mix dependencies for storage_ex
+  - package-ecosystem: "mix"
+    directory: "/packages/storage_ex"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+
+  # Monitor Mix dependencies for storage_ex_s3
+  - package-ecosystem: "mix"
+    directory: "/packages/storage_ex_s3"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+
+  # Monitor Mix dependencies for storage_ex_ecto
+  - package-ecosystem: "mix"
+    directory: "/packages/storage_ex_ecto"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10

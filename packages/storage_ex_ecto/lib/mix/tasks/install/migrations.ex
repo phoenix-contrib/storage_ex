@@ -5,7 +5,7 @@ defmodule Mix.Tasks.Install.Migrations do
   """
 
   def add_storage_migration(igniter) do
-    base = "create_phoenix_contrib_storage_ex_tables"
+    base = "create_storage_ex_ecto_tables"
 
     repo_module =
       Igniter.Project.Module.module_name(

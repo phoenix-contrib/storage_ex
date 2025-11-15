@@ -1,6 +1,15 @@
-# Phoenix Contrib Storage
+# StorageEx
 
-ActiveStorage-like file storage for Phoenix applications. This is the core package that provides the facade pattern, service behavior, and local storage implementation.
+ActiveStorage-like file storage for Phoenix applications. Simple, powerful file uploads with support for local disk, S3, and more.
+
+## Features
+
+- 🗄️ **Multiple backends**: Local disk, Amazon S3, and extensible adapter system
+- 🔒 **Signed URLs**: Secure, expiring URLs for downloads and direct uploads
+- 📤 **Direct uploads**: Client-side uploads without going through your server
+- 🔄 **Streaming**: Memory-efficient streaming for large files
+- ✅ **Checksum validation**: Integrity checking with MD5
+- 🎯 **Phoenix integration**: Drop-in routes and controllers
 
 ## Installation
 
@@ -9,45 +18,62 @@ Add to your `mix.exs`:
 ```elixir
 def deps do
   [
-    {:phoenix_contrib_storage, "~> 0.1"}
+    {:phoenix_contrib_storage_ex, "~> 0.1"}
   ]
 end
 ```
 
 ## Quick Start
 
-1. **Define your storage facade:**
+### 1. Configure
+
+In `config/runtime.exs`:
 
 ```elixir
-defmodule MyApp.Storage do
-  use Storage, otp_app: :my_app
-end
-```
-
-2. **Configure in `runtime.exs`:**
-
-```elixir
-config :my_app, MyApp.Storage,
-  repo: MyApp.Repo,
+config :storage_ex,
+  service: :local,
   services: %{
     local: %{
-      service: Storage.Services.Local,
+      service: StorageEx.Services.DiskService,
       configuration: %{root: "priv/storage"}
     }
   },
-  service: :local
+  token_salt: "change-this-in-production"
 ```
 
-3. **Use in your application:**
+### 2. Add Routes
+
+In `lib/my_app_web/router.ex`:
 
 ```elixir
-# Get the local service
-local_service = MyApp.Storage.get_service!(:local)
+use StorageEx.Router
 
-# Store a file
-{:ok, key} = Storage.Services.Local.put(local_service, "hello.txt", "Hello, World!")
+scope "/storage_ex" do
+  pipe_through :browser
+  storage_ex_routes()
+end
+```
 
-# Read a file
+### 3. Upload Files
+
+```elixir
+# Upload a file
+{:ok, key} = StorageEx.upload("avatar.png", file_data)
+
+# Generate signed download URL
+url = StorageEx.url(key,
+  endpoint: MyAppWeb.Endpoint,
+  filename: "avatar.png"
+)
+
+# Download a file
+{:ok, data} = StorageEx.download(key)
+
+# Check if file exists
+StorageEx.exists?(key)  # => true
+
+# Delete a file
+:ok = StorageEx.delete(key)
 {:ok, content} = Storage.Services.Local.get(local_service, "hello.txt")
 ```
 
