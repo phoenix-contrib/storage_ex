@@ -76,7 +76,7 @@ jobs:
 
       - name: Upload coverage to Codecov
         if: matrix.elixir == '1.16' && matrix.otp == '26'
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v5
         with:
           files: ./cover/excoveralls.json
 
