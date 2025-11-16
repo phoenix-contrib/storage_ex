@@ -34,6 +34,42 @@ defmodule StorageEx do
 
       # Update metadata
       StorageEx.update_metadata(key: "avatar.png", metadata: %{foo: "bar"})
+
+  ## Image Variants
+
+      # Create a variant (transformed image)
+      variant = StorageEx.variant("photo.jpg", resize_to_limit: [100, 100], format: :webp)
+
+      # Process the variant (generates if needed, returns cached if exists)
+      {:ok, variant} = StorageEx.Variant.process(variant)
+
+      # Download variant data
+      {:ok, binary} = StorageEx.Variant.download(variant)
+
+  ## Previews (PDF, Video)
+
+      # Create a preview from a video
+      preview = StorageEx.preview("video.mp4", content_type: "video/mp4")
+
+      # Process the preview (generates if needed, returns cached if exists)
+      {:ok, preview} = StorageEx.Preview.process(preview)
+
+      # Get URL for the preview
+      url = StorageEx.Preview.url(preview)
+
+      # Preview from PDF
+      preview = StorageEx.preview("document.pdf", content_type: "application/pdf")
+
+  ## Preview Variants (Preview + Variant Combined)
+
+      # Create thumbnail from video preview
+      pv = StorageEx.preview_variant("video.mp4",
+        content_type: "video/mp4",
+        variant: [resize_to_limit: [100, 100]]
+      )
+
+      {:ok, pv} = StorageEx.PreviewVariant.process(pv)
+      url = StorageEx.PreviewVariant.url(pv)
   """
 
   alias StorageEx.{Config, Dispatcher}
@@ -169,6 +205,173 @@ defmodule StorageEx do
   def headers_for_direct_upload(key, opts \\ []) do
     service = get_service(opts)
     Dispatcher.call(:headers_for_direct_upload, [service, key, opts])
+  end
+
+  # --- Image Variants ---
+
+  @doc """
+  Creates a variant specification for a blob.
+
+  Returns a `StorageEx.Variant` struct that can be processed to generate
+  a transformed version of the image.
+
+  ## Parameters
+
+    * `key` - The storage key of the original blob
+    * `transformations` - Keyword list of image transformations to apply
+    * `opts` - Options (currently only `:service_name`)
+
+  ## Transformation Options
+
+    * `:resize_to_limit` - Resize to fit within dimensions `[width, height]`
+    * `:resize_to_fit` - Resize to exact dimensions `[width, height]`
+    * `:resize_to_fill` - Resize and crop to exact dimensions `[width, height]`
+    * `:crop` - Crop image `[x, y, width, height]`
+    * `:rotate` - Rotate image by degrees
+    * `:quality` - JPEG/WebP quality (1-100)
+    * `:format` - Output format (`:png`, `:jpg`, `:webp`, `:gif`, `:tiff`)
+
+  ## Service Options
+
+    * `:service_name` - The service name (atom) to use. If nil, uses the default service.
+      Note: Following Rails' design, variants should use the same service as the original blob.
+
+  ## Examples
+
+      # Create thumbnail variant with default service
+      variant = StorageEx.variant("photo.jpg", resize_to_limit: [100, 100])
+
+      # Create WebP variant with quality
+      variant = StorageEx.variant("photo.jpg",
+        resize_to_fill: [200, 200],
+        quality: 85,
+        format: :webp
+      )
+
+      # Use specific service
+      variant = StorageEx.variant("avatar.jpg", [resize_to_limit: [100, 100]], service_name: :s3)
+
+      # Process and download
+      {:ok, variant} = StorageEx.Variant.process(variant)
+      {:ok, binary} = StorageEx.Variant.download(variant)
+  """
+  def variant(key, transformations, opts \\ []) do
+    service_name = Keyword.get(opts, :service_name)
+    StorageEx.Variant.new(key, transformations, service_name)
+  end
+
+  # --- Previews ---
+
+  @doc """
+  Creates a preview specification for a non-image blob (PDF, video, etc.).
+
+  Returns a `StorageEx.Preview` struct that can be processed to extract
+  a preview image from the blob.
+
+  ## Parameters
+
+    * `key` - The storage key of the original blob
+    * `opts` - Preview options:
+      * `:content_type` - MIME type of the blob (required)
+      * `:format` - Output format (`:png` or `:jpg`, default: `:png`)
+      * `:service_name` - The service name (atom) to use (nil for default)
+      * Additional previewer-specific options
+
+  ## Previewer-Specific Options
+
+  ### Video Previews (requires FFmpeg)
+    * `:time` - Time position to extract frame from (e.g., "00:00:05")
+
+  ### PDF Previews (requires Poppler or MuPDF)
+    * No additional options (renders first page)
+
+  ## Service Options
+
+    * `:service_name` - The service name (atom) to use. If nil, uses the default service.
+      Note: Following Rails' design, previews are stored in the same service as the original blob.
+
+  ## Examples
+
+      # Create video preview
+      preview = StorageEx.preview("video.mp4", content_type: "video/mp4")
+
+      # Video preview at specific time
+      preview = StorageEx.preview("video.mp4",
+        content_type: "video/mp4",
+        time: "00:00:05"
+      )
+
+      # PDF preview as JPEG
+      preview = StorageEx.preview("document.pdf",
+        content_type: "application/pdf",
+        format: :jpg
+      )
+
+      # Use specific service
+      preview = StorageEx.preview("video.mp4",
+        content_type: "video/mp4",
+        service_name: :s3
+      )
+
+      # Process and download
+      {:ok, preview} = StorageEx.Preview.process(preview)
+      {:ok, binary} = StorageEx.Preview.download(preview)
+
+      # Get URL
+      url = StorageEx.Preview.url(preview)
+  """
+  def preview(key, opts) when is_binary(key) and is_list(opts) do
+    StorageEx.Preview.new(key, opts)
+  end
+
+  # --- Preview Variants ---
+
+  @doc """
+  Creates a preview variant specification (preview + variant combined).
+
+  This combines preview generation and variant transformation into a single
+  operation, providing a more convenient API similar to Rails' ActiveStorage.
+
+  ## Parameters
+
+    * `key` - The storage key of the original blob
+    * `opts` - Preview and variant options:
+      * `:content_type` - MIME type of the blob (required)
+      * `:variant` - Variant transformations to apply (optional)
+      * `:format` - Preview output format (`:png` or `:jpg`, default: `:png`)
+      * `:service_name` - The service name (atom) to use (nil for default)
+      * Additional preview-specific options (e.g., `:time` for videos)
+
+  ## Examples
+
+      # Video preview with thumbnail variant
+      pv = StorageEx.preview_variant("video.mp4",
+        content_type: "video/mp4",
+        variant: [resize_to_limit: [100, 100]]
+      )
+
+      # Process and get URL
+      {:ok, pv} = StorageEx.PreviewVariant.process(pv)
+      url = StorageEx.PreviewVariant.url(pv)
+
+      # With preview options
+      pv = StorageEx.preview_variant("video.mp4",
+        content_type: "video/mp4",
+        time: "00:00:05",
+        variant: [resize_to_fill: [200, 200], format: :webp]
+      )
+
+      # PDF preview as thumbnail
+      pv = StorageEx.preview_variant("document.pdf",
+        content_type: "application/pdf",
+        variant: [resize_to_limit: [300, 300]]
+      )
+
+      # Preview without variant (equivalent to StorageEx.preview/2)
+      pv = StorageEx.preview_variant("video.mp4", content_type: "video/mp4")
+  """
+  def preview_variant(key, opts) when is_binary(key) and is_list(opts) do
+    StorageEx.PreviewVariant.new(key, opts)
   end
 
   defp get_service(opts) do

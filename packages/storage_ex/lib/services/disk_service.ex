@@ -199,9 +199,9 @@ defmodule StorageEx.Services.DiskService do
     # Generate signed URL if endpoint is provided, otherwise return path
     case Keyword.get(opts, :endpoint) do
       nil ->
-        # Fallback: return filesystem path for backward compatibility
-        # Users should provide :endpoint option for proper signed URLs
-        "/storage_ex/disk/#{key}"
+        # Fallback: return filesystem path with filename
+        filename = Keyword.get(opts, :filename, key)
+        "/storage_ex/disk/#{key}/#{filename}"
 
       endpoint ->
         StorageEx.Phoenix.URL.signed_url(key, opts ++ [endpoint: endpoint])
