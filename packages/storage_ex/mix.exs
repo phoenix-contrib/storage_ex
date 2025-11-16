@@ -58,7 +58,9 @@ defmodule PhoenixContribStorageEx.MixProject do
       {:jason, "~> 1.4"},
       {:mime, "~> 2.0"},
       {:telemetry, "~> 1.0"},
-      {:igniter, "~> 0.6", optional: true}
+      {:igniter, "~> 0.6", optional: true},
+      # Optional image processing (for variants/transformations)
+      {:image, "~> 0.54", only: [:dev, :test]}
     ] ++ MixHelpers.deps()
   end
 end
