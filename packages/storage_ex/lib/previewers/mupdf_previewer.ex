@@ -67,7 +67,7 @@ defmodule StorageEx.Previewers.MuPDFPreviewer do
   end
 
   @impl true
-  def available?() do
+  def available? do
     # MuPDF's mutool exits with status 1 when called with no arguments
     # So we need a custom check
     case System.cmd(mutool_path(), [], stderr_to_stdout: true) do

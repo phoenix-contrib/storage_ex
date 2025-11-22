@@ -7,16 +7,45 @@ defmodule StorageEx.Services.DiskService do
   of the key (e.g., key "abcd1234" -> "ab/cd/abcd1234") for better
   filesystem performance with large numbers of files.
 
+  ## Configuration
+
+  - `:root` - Root directory for file storage (default: "priv/storage")
+  - `:public` - Whether files are publicly accessible (default: false)
+  - `:chunk_size` - Chunk size for streaming downloads in bytes (default: 5MB)
+
+  ## Examples
+
+      # Standard configuration with default 5MB chunks
+      %{
+        service: StorageEx.Services.DiskService,
+        configuration: %{
+          root: "priv/storage"
+        }
+      }
+
+      # Custom chunk size for testing (50KB chunks)
+      %{
+        service: StorageEx.Services.DiskService,
+        configuration: %{
+          root: "test/storage",
+          chunk_size: 50 * 1024
+        }
+      }
+
   Mirrors Rails' ActiveStorage::Service::DiskService.
   """
 
   @behaviour StorageEx.Service
 
-  defstruct [:root, public: false]
+  defstruct [:root, :chunk_size, public: false]
 
   alias __MODULE__
+  alias StorageEx.Phoenix.URL
 
-  @type t :: %__MODULE__{root: String.t(), public: boolean()}
+  @type t :: %__MODULE__{root: String.t(), chunk_size: pos_integer(), public: boolean()}
+
+  # Default 5MB chunk size for streaming downloads (Rails-compatible)
+  @default_chunk_size 5 * 1024 * 1024
 
   # -- Initialization ---------------------------------------------------------
 
@@ -24,10 +53,11 @@ defmodule StorageEx.Services.DiskService do
   def new(config) when is_map(config) do
     root = Map.get(config, :root, default_root())
     public = Map.get(config, :public, false)
+    chunk_size = Map.get(config, :chunk_size, @default_chunk_size)
 
     case File.mkdir_p(root) do
       :ok ->
-        %__MODULE__{root: root, public: public}
+        %__MODULE__{root: root, public: public, chunk_size: chunk_size}
 
       {:error, reason} ->
         {:error, "Failed to create storage directory #{root}: #{inspect(reason)}"}
@@ -91,22 +121,11 @@ defmodule StorageEx.Services.DiskService do
   def download_stream(%DiskService{} = service, key) do
     path = path_for(service, key)
 
-    unless File.exists?(path) do
-      {:error, :file_not_found}
-    else
-      stream =
-        Stream.resource(
-          fn -> File.open!(path, [:binary, :read]) end,
-          fn io ->
-            case IO.binread(io, 5_242_880) do
-              data when is_binary(data) -> {[data], io}
-              :eof -> {:halt, io}
-            end
-          end,
-          fn io -> File.close(io) end
-        )
-
+    if File.exists?(path) do
+      stream = create_file_stream(path, service.chunk_size)
       {:ok, stream}
+    else
+      {:error, :file_not_found}
     end
   end
 
@@ -162,26 +181,7 @@ defmodule StorageEx.Services.DiskService do
 
     pattern
     |> Path.wildcard()
-    |> Enum.filter(fn path ->
-      # Only process regular files, not directories
-      if File.regular?(path) do
-        # Extract the key from the path by removing root and folder structure
-        relative = Path.relative_to(path, service.root)
-        # The key is everything after the first two directory levels (e.g., "ab/cd/key" -> "key")
-        # But the key itself might contain slashes, so we need to reconstruct it
-        case Path.split(relative) do
-          [_a, _b | rest] when rest != [] ->
-            # Reconstruct the key from the remaining path components
-            key = Path.join(rest)
-            String.starts_with?(key, prefix)
-
-          _ ->
-            false
-        end
-      else
-        false
-      end
-    end)
+    |> Enum.filter(&file_matches_prefix?(&1, service.root, prefix))
     |> Enum.each(&File.rm/1)
 
     :ok
@@ -204,7 +204,7 @@ defmodule StorageEx.Services.DiskService do
         "/storage_ex/disk/#{key}/#{filename}"
 
       endpoint ->
-        StorageEx.Phoenix.URL.signed_url(key, opts ++ [endpoint: endpoint])
+        URL.signed_url(key, opts ++ [endpoint: endpoint])
     end
   end
 
@@ -216,7 +216,7 @@ defmodule StorageEx.Services.DiskService do
         {:ok, "/storage_ex/disk/#{key}"}
 
       endpoint ->
-        StorageEx.Phoenix.URL.signed_upload_url(key, opts ++ [endpoint: endpoint])
+        URL.signed_upload_url(key, opts ++ [endpoint: endpoint])
     end
   end
 
@@ -269,6 +269,40 @@ defmodule StorageEx.Services.DiskService do
 
       {:error, reason} ->
         {:error, reason}
+    end
+  end
+
+  defp create_file_stream(path, chunk_size) do
+    Stream.resource(
+      fn -> File.open!(path, [:binary, :read]) end,
+      fn io ->
+        case IO.binread(io, chunk_size) do
+          data when is_binary(data) -> {[data], io}
+          :eof -> {:halt, io}
+        end
+      end,
+      fn io -> File.close(io) end
+    )
+  end
+
+  defp file_matches_prefix?(path, root, prefix) do
+    # Only process regular files, not directories
+    if File.regular?(path) do
+      # Extract the key from the path by removing root and folder structure
+      relative = Path.relative_to(path, root)
+      # The key is everything after the first two directory levels (e.g., "ab/cd/key" -> "key")
+      # But the key itself might contain slashes, so we need to reconstruct it
+      case Path.split(relative) do
+        [_a, _b | rest] when rest != [] ->
+          # Reconstruct the key from the remaining path components
+          key = Path.join(rest)
+          String.starts_with?(key, prefix)
+
+        _ ->
+          false
+      end
+    else
+      false
     end
   end
 end

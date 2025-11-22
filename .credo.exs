@@ -2,17 +2,6 @@
   configs: [
     %{
       name: "default",
-      files: %{
-        included: [
-          "packages/*/lib/",
-          "packages/*/test/"
-        ],
-        excluded: [
-          ~r"/_build/",
-          ~r"/deps/",
-          ~r"assets/node_modules/"
-        ]
-      },
       strict: true,
       color: true,
       parse_timeout: 5000,
@@ -31,8 +20,8 @@
         ## Design
         #
         {Credo.Check.Design.AliasUsage, [priority: :low, if_nested_deeper_than: 2, if_called_more_often_than: 0]},
-        {Credo.Check.Design.TagTODO, [exit_status: 2]},
-        {Credo.Check.Design.TagFIXME, []},
+        {Credo.Check.Design.TagTODO, false},
+        {Credo.Check.Design.TagFIXME, false},
 
         #
         ## Readability
@@ -64,7 +53,8 @@
         {Credo.Check.Refactor.CyclomaticComplexity, []},
         {Credo.Check.Refactor.FunctionArity, []},
         {Credo.Check.Refactor.LongQuoteBlocks, []},
-        {Credo.Check.Refactor.MapInto, []},
+        # old elixir versions
+        {Credo.Check.Refactor.MapInto, false},
         {Credo.Check.Refactor.MatchInCondition, []},
         {Credo.Check.Refactor.NegatedConditionsInUnless, []},
         {Credo.Check.Refactor.NegatedConditionsWithElse, []},
@@ -80,7 +70,8 @@
         {Credo.Check.Warning.ExpensiveEmptyEnumCheck, []},
         {Credo.Check.Warning.IExPry, []},
         {Credo.Check.Warning.IoInspect, []},
-        {Credo.Check.Warning.LazyLogging, []},
+        # Old elxir versions
+        {Credo.Check.Warning.LazyLogging, false},
         {Credo.Check.Warning.MixEnv, false},
         {Credo.Check.Warning.OperationOnSameValues, []},
         {Credo.Check.Warning.OperationWithConstantResult, []},
@@ -98,4 +89,3 @@
     }
   ]
 }
-

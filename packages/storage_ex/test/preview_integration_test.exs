@@ -1,9 +1,9 @@
 defmodule StorageEx.PreviewIntegrationTest do
-  use ExUnit.Case, async: false
+  use ExUnit.Case, async: true
   use StorageEx.Support.DiskCleanup
 
   alias StorageEx.Preview
-  alias StorageEx.Previewers.{VideoPreviewer, PopplerPDFPreviewer}
+  alias StorageEx.Previewers.{MuPDFPreviewer, PopplerPDFPreviewer, VideoPreviewer}
 
   @fixtures_path Path.expand("fixtures/files", __DIR__)
 
@@ -127,7 +127,7 @@ defmodule StorageEx.PreviewIntegrationTest do
     @tag :integration
     test "generates and caches PDF preview" do
       if PopplerPDFPreviewer.available?() or
-           StorageEx.Previewers.MuPDFPreviewer.available?() do
+           MuPDFPreviewer.available?() do
         # Upload the PDF to storage
         pdf_path = Path.join(@fixtures_path, "report.pdf")
         pdf_data = File.read!(pdf_path)

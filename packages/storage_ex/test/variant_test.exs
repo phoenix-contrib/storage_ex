@@ -1,17 +1,17 @@
 defmodule StorageEx.VariantTest do
-  use ExUnit.Case, async: false
+  use ExUnit.Case, async: true
   use StorageEx.Support.DiskCleanup
 
   alias StorageEx.{Variant, Variation}
 
   @fixtures_path Path.expand("fixtures/files", __DIR__)
 
-  setup do
+  setup %{namespace: namespace} do
     # Upload a test image from fixtures to the default service
     # Using racecar.jpg (same as Rails) - 1.1MB JPEG, 640x427px
     test_image_path = Path.join(@fixtures_path, "racecar.jpg")
     test_image_data = File.read!(test_image_path)
-    test_key = "test-images/racecar.jpg"
+    test_key = "#{namespace}/test-images/racecar.jpg"
 
     {:ok, _} = StorageEx.upload(test_key, test_image_data, content_type: "image/jpeg")
 

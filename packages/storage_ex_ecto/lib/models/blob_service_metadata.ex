@@ -1,9 +1,12 @@
 defmodule StorageExEcto.Models.BlobServiceMetadata do
+  @moduledoc """
+  Functions for converting between Blob models and ServiceMetadata structures.
+  """
   alias StorageEx.ServiceMetadata
   alias StorageExEcto.Models.Blob
 
-  # TODO: Remove this dialyzer suppression once forcibly_serve_as_binary?/1 and 
-  # allowed_inline?/1 are fully implemented with real logic. Currently these stub 
+  # TODO: Remove this dialyzer suppression once forcibly_serve_as_binary?/1 and
+  # allowed_inline?/1 are fully implemented with real logic. Currently these stub
   # functions always return false/true, causing dialyzer to detect dead code branches.
   @dialyzer {:nowarn_function, from_blob: 1}
   @spec from_blob(Blob.t()) :: ServiceMetadata.t()

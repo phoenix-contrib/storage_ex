@@ -13,20 +13,22 @@ defmodule StorageExEcto.Operations.Blob.Update do
     repo.transaction(fn ->
       changeset = Blob.changeset(blob, attrs)
 
-      with {:ok, blob} <- repo.update(changeset) do
-        touch_attachments(repo, blob)
+      case repo.update(changeset) do
+        {:ok, blob} ->
+          touch_attachments(repo, blob)
 
-        if update_service_metadata?(changeset.changes) do
-          StorageEx.update_metadata(
-            key: blob.key,
-            metadata: BlobServiceMetadata.from_blob(blob),
-            service_name: blob.service_name
-          )
-        end
+          if update_service_metadata?(changeset.changes) do
+            StorageEx.update_metadata(
+              key: blob.key,
+              metadata: BlobServiceMetadata.from_blob(blob),
+              service_name: blob.service_name
+            )
+          end
 
-        {:ok, blob}
-      else
-        {:error, reason} -> repo.rollback(reason)
+          {:ok, blob}
+
+        {:error, reason} ->
+          repo.rollback(reason)
       end
     end)
   end

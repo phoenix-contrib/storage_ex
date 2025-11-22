@@ -2,7 +2,7 @@ defmodule StorageEx.PreviewersTest do
   use ExUnit.Case, async: true
 
   alias StorageEx.Previewer
-  alias StorageEx.Previewers.{VideoPreviewer, PopplerPDFPreviewer, MuPDFPreviewer}
+  alias StorageEx.Previewers.{MuPDFPreviewer, PopplerPDFPreviewer, VideoPreviewer}
 
   describe "Previewer.find_previewer/1" do
     test "finds video previewer for video content types" do

@@ -1,5 +1,5 @@
 defmodule StorageEx.Transformers.NullTest do
-  use ExUnit.Case, async: false
+  use ExUnit.Case, async: true
   use StorageEx.Support.DiskCleanup
 
   alias StorageEx.Transformers.Null

@@ -1,4 +1,7 @@
 defmodule StorageEx.ServiceMetadata do
+  @moduledoc """
+  Struct for holding service-specific metadata for stored files.
+  """
   defstruct [:content_type, :disposition, :filename, custom_metadata: %{}]
 
   @type t :: %__MODULE__{

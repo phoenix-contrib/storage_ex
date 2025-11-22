@@ -70,6 +70,38 @@ defmodule StorageEx do
 
       {:ok, pv} = StorageEx.PreviewVariant.process(pv)
       url = StorageEx.PreviewVariant.url(pv)
+
+  ## Analyzers (Metadata Extraction)
+
+  StorageEx follows Rails ActiveStorage's dependency management: **always works, enhanced with optional tools**.
+
+      # Image analysis - works without Image gem (returns empty), enhanced with Image/libvips
+      {:ok, metadata} = StorageEx.analyze("photo.jpg", "image/jpeg", :local)
+      # Without Image gem: %{}
+      # With Image gem: %{width: 1024, height: 768}
+
+      # Video analysis - works without FFmpeg (returns empty), enhanced with FFmpeg
+      {:ok, metadata} = StorageEx.analyze("video.mp4", "video/mp4", :local)
+      # Without FFmpeg: %{}
+      # With FFmpeg: %{width: 640, height: 480, duration: 30.5, display_aspect_ratio: [4, 3]}
+
+      # Audio analysis - works without FFmpeg (returns empty), enhanced with FFmpeg
+      {:ok, metadata} = StorageEx.analyze("song.mp3", "audio/mpeg", :local)
+      # Without FFmpeg: %{}
+      # With FFmpeg: %{duration: 180.5, bit_rate: 320000, sample_rate: 44100}
+
+      # Unknown content types use NullAnalyzer
+      {:ok, metadata} = StorageEx.analyze("document.txt", "text/plain", :local)
+      # => %{}
+
+  ### Optional FFmpeg Enhancement
+
+      # Install FFmpeg for video/audio analysis
+      # macOS: brew install ffmpeg
+      # Ubuntu: sudo apt install ffmpeg
+      # Docker: RUN apk add --no-cache ffmpeg
+
+      # Applications work immediately, enhanced when FFmpeg available
   """
 
   alias StorageEx.{Config, Dispatcher}
@@ -372,6 +404,112 @@ defmodule StorageEx do
   """
   def preview_variant(key, opts) when is_binary(key) and is_list(opts) do
     StorageEx.PreviewVariant.new(key, opts)
+  end
+
+  # --- Analyzers ---
+
+  @doc """
+  Analyzes a file and extracts metadata.
+
+  Downloads the file from storage and runs it through the appropriate analyzer
+  to extract metadata such as dimensions, duration, or other file properties.
+
+  This is fully compatible with Rails ActiveStorage analyzer functionality, including
+  the same graceful dependency handling strategy.
+
+  ## Rails-Style Dependency Management
+
+  StorageEx follows Rails ActiveStorage's proven approach to external dependencies:
+
+  ### ✅ Progressive Enhancement (Never Breaks Apps)
+
+  - **Image Analysis**: Returns empty `%{}` without Image/libvips, rich metadata with Image/libvips
+  - **Video Analysis**: Returns empty `%{}` without FFmpeg, rich metadata with FFmpeg
+  - **Audio Analysis**: Returns empty `%{}` without FFmpeg, rich metadata with FFmpeg
+
+  ### 🔧 Optional Dependency Installation
+
+      # Image analysis enhancement
+      # Add to mix.exs: {:image, "~> 0.54"}
+      # macOS: brew install vips
+      # Ubuntu: sudo apt install libvips-dev
+
+      # Video/Audio analysis enhancement
+      # macOS: brew install ffmpeg
+      # Ubuntu: sudo apt install ffmpeg
+      # Docker: apk add --no-cache ffmpeg
+
+  ### 📊 User Experience Examples
+
+      # Without dependencies - works immediately
+      {:ok, %{}} = StorageEx.analyze("photo.jpg", "image/jpeg", :local)
+      # Log: [error] Skipping image analysis because the image gem isn't installed
+
+      {:ok, %{}} = StorageEx.analyze("video.mp4", "video/mp4", :local)
+      # Log: [info] Skipping video analysis because ffprobe isn't installed
+
+      # With dependencies - enhanced metadata
+      {:ok, %{width: 1024, height: 768}} = StorageEx.analyze("photo.jpg", "image/jpeg", :local)
+      {:ok, %{width: 640.0, height: 480.0, duration: 5.1}} = StorageEx.analyze("video.mp4", "video/mp4", :local)
+
+  ## Parameters
+
+    * `key` - The storage key of the file to analyze
+    * `content_type` - MIME type of the file
+    * `service_name` - The service name (atom) to use
+
+  ## Returns
+
+    * `{:ok, metadata}` - Analysis successful, metadata is a map (empty if analyzer unavailable)
+    * `{:error, reason}` - Analysis failed (file not found, invalid format, etc.)
+
+  ## Metadata Examples
+
+      # Image analysis (enhanced with Image gem)
+      StorageEx.analyze("photo.jpg", "image/jpeg", :local)
+      #=> {:ok, %{width: 1024, height: 768}}
+
+      # Video analysis (enhanced with FFmpeg)
+      StorageEx.analyze("video.mp4", "video/mp4", :local)
+      #=> {:ok, %{width: 640, height: 480, duration: 30.5, display_aspect_ratio: [4, 3]}}
+
+      # Audio analysis (enhanced with FFmpeg)
+      StorageEx.analyze("song.mp3", "audio/mpeg", :local)
+      #=> {:ok, %{duration: 180.5, bit_rate: 320000, sample_rate: 44100}}
+
+      # Unknown content type (uses NullAnalyzer)
+      StorageEx.analyze("document.txt", "text/plain", :local)
+      #=> {:ok, %{}}
+
+  ## Examples
+
+      # Basic usage
+      {:ok, metadata} = StorageEx.analyze("avatar.png", "image/png", :local)
+      width = metadata.width
+      height = metadata.height
+
+      # Use different storage service
+      {:ok, metadata} = StorageEx.analyze("video.mp4", "video/mp4", :s3)
+
+      # Handle different scenarios
+      case StorageEx.analyze("media.mov", "video/quicktime", :local) do
+        {:ok, metadata} when map_size(metadata) > 0 ->
+          # Rich metadata available - FFmpeg installed and working
+          process_video_metadata(metadata)
+        {:ok, %{}} ->
+          # FFmpeg not available - install for enhanced video analysis
+          log_ffmpeg_suggestion()
+        {:error, reason} ->
+          # Analysis failed - file not found, invalid format, etc.
+          handle_analysis_error(reason)
+      end
+
+  This ensures applications work **immediately out-of-the-box** while providing clear
+  paths for enhanced functionality as requirements grow.
+  """
+  @spec analyze(String.t(), String.t(), atom()) :: {:ok, map()} | {:error, term()}
+  def analyze(key, content_type, service_name) when is_atom(service_name) do
+    StorageEx.Analyzer.analyze(key, content_type, service_name)
   end
 
   defp get_service(opts) do

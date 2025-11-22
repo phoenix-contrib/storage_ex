@@ -1,8 +1,10 @@
-defmodule StorageEx.Phoenix.DiskControllerTest do
-  use ExUnit.Case, async: false
+defmodule DiskControllerTest do
+  use ExUnit.Case, async: true
   import Plug.Test
   import Plug.Conn
   use StorageEx.Support.DiskCleanup
+
+  alias StorageEx.Phoenix.{DiskController, URL}
 
   # Mock endpoint for token signing
   defmodule TestEndpoint do
@@ -10,34 +12,22 @@ defmodule StorageEx.Phoenix.DiskControllerTest do
     def config(:url), do: [scheme: "http", host: "localhost", port: 4000]
   end
 
-  setup do
-    # Set up config
-    Application.put_env(:storage_ex, :token_salt, "test_salt")
-    Application.put_env(:storage_ex, :endpoint, TestEndpoint)
-    StorageEx.Config.reload!()
-
-    :ok
-  end
-
   defp generate_key, do: "test_#{System.unique_integer([:positive])}"
 
   describe "show/2 - file download" do
     test "downloads file with valid token" do
-      # Upload a test file
       key = generate_key()
       data = "test content"
       {:ok, ^key} = StorageEx.upload(key, data)
 
-      # Generate signed URL
       url =
-        StorageEx.Phoenix.URL.signed_url(key,
+        URL.signed_url(key,
           endpoint: TestEndpoint,
           filename: "test.txt",
           content_type: "text/plain",
           disposition: :attachment
         )
 
-      # Extract encoded_key from URL
       [encoded_key, _filename] = String.split(url, "/disk/") |> List.last() |> String.split("/")
 
       # Make request
@@ -46,7 +36,7 @@ defmodule StorageEx.Phoenix.DiskControllerTest do
         |> put_private(:phoenix_endpoint, TestEndpoint)
 
       conn =
-        StorageEx.Phoenix.DiskController.show(conn, %{
+        DiskController.show(conn, %{
           "encoded_key" => encoded_key,
           "filename" => "test.txt"
         })
@@ -63,7 +53,7 @@ defmodule StorageEx.Phoenix.DiskControllerTest do
         |> put_private(:phoenix_endpoint, TestEndpoint)
 
       conn =
-        StorageEx.Phoenix.DiskController.show(conn, %{
+        DiskController.show(conn, %{
           "encoded_key" => "invalid_token",
           "filename" => "test.txt"
         })
@@ -77,7 +67,7 @@ defmodule StorageEx.Phoenix.DiskControllerTest do
       key = "nonexistent_#{System.unique_integer([:positive])}"
 
       url =
-        StorageEx.Phoenix.URL.signed_url(key,
+        URL.signed_url(key,
           endpoint: TestEndpoint,
           filename: "test.txt"
         )
@@ -89,7 +79,7 @@ defmodule StorageEx.Phoenix.DiskControllerTest do
         |> put_private(:phoenix_endpoint, TestEndpoint)
 
       conn =
-        StorageEx.Phoenix.DiskController.show(conn, %{
+        DiskController.show(conn, %{
           "encoded_key" => encoded_key,
           "filename" => "test.txt"
         })
@@ -103,7 +93,7 @@ defmodule StorageEx.Phoenix.DiskControllerTest do
       {:ok, ^key} = StorageEx.upload(key, data)
 
       url =
-        StorageEx.Phoenix.URL.signed_url(key,
+        URL.signed_url(key,
           endpoint: TestEndpoint,
           filename: "inline.txt",
           disposition: :inline
@@ -116,7 +106,7 @@ defmodule StorageEx.Phoenix.DiskControllerTest do
         |> put_private(:phoenix_endpoint, TestEndpoint)
 
       conn =
-        StorageEx.Phoenix.DiskController.show(conn, %{
+        DiskController.show(conn, %{
           "encoded_key" => encoded_key,
           "filename" => "inline.txt"
         })
@@ -133,7 +123,7 @@ defmodule StorageEx.Phoenix.DiskControllerTest do
       checksum = :crypto.hash(:md5, data) |> Base.encode64()
 
       {:ok, url} =
-        StorageEx.Phoenix.URL.signed_upload_url(key,
+        URL.signed_upload_url(key,
           endpoint: TestEndpoint,
           content_type: "text/plain",
           content_length: byte_size(data),
@@ -150,7 +140,7 @@ defmodule StorageEx.Phoenix.DiskControllerTest do
         |> put_private(:phoenix_endpoint, TestEndpoint)
 
       conn =
-        StorageEx.Phoenix.DiskController.update(conn, %{
+        DiskController.update(conn, %{
           "encoded_token" => encoded_token
         })
 
@@ -164,7 +154,7 @@ defmodule StorageEx.Phoenix.DiskControllerTest do
       data = "content"
 
       {:ok, url} =
-        StorageEx.Phoenix.URL.signed_upload_url(key,
+        URL.signed_upload_url(key,
           endpoint: TestEndpoint,
           content_type: "text/plain",
           content_length: byte_size(data)
@@ -180,7 +170,7 @@ defmodule StorageEx.Phoenix.DiskControllerTest do
         |> put_private(:phoenix_endpoint, TestEndpoint)
 
       conn =
-        StorageEx.Phoenix.DiskController.update(conn, %{
+        DiskController.update(conn, %{
           "encoded_token" => encoded_token
         })
 
@@ -193,7 +183,7 @@ defmodule StorageEx.Phoenix.DiskControllerTest do
       data = "content"
 
       {:ok, url} =
-        StorageEx.Phoenix.URL.signed_upload_url(key,
+        URL.signed_upload_url(key,
           endpoint: TestEndpoint,
           content_type: "text/plain",
           # Wrong length!
@@ -209,7 +199,7 @@ defmodule StorageEx.Phoenix.DiskControllerTest do
         |> put_private(:phoenix_endpoint, TestEndpoint)
 
       conn =
-        StorageEx.Phoenix.DiskController.update(conn, %{
+        DiskController.update(conn, %{
           "encoded_token" => encoded_token
         })
 
@@ -223,7 +213,7 @@ defmodule StorageEx.Phoenix.DiskControllerTest do
       wrong_checksum = :crypto.hash(:md5, "wrong data") |> Base.encode64()
 
       {:ok, url} =
-        StorageEx.Phoenix.URL.signed_upload_url(key,
+        URL.signed_upload_url(key,
           endpoint: TestEndpoint,
           content_type: "text/plain",
           content_length: byte_size(data),
@@ -239,7 +229,7 @@ defmodule StorageEx.Phoenix.DiskControllerTest do
         |> put_private(:phoenix_endpoint, TestEndpoint)
 
       conn =
-        StorageEx.Phoenix.DiskController.update(conn, %{
+        DiskController.update(conn, %{
           "encoded_token" => encoded_token
         })
 
@@ -255,7 +245,7 @@ defmodule StorageEx.Phoenix.DiskControllerTest do
         |> put_private(:phoenix_endpoint, TestEndpoint)
 
       conn =
-        StorageEx.Phoenix.DiskController.update(conn, %{
+        DiskController.update(conn, %{
           "encoded_token" => "invalid_token"
         })
 

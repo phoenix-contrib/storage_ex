@@ -1,4 +1,7 @@
 defmodule StorageExEcto.Models.BlobMetadata do
+  @moduledoc """
+  Schema for storing blob metadata information including analysis and identification status.
+  """
   use Ecto.Schema
   import Ecto.Changeset
 
@@ -32,8 +35,8 @@ defmodule StorageExEcto.Models.BlobMetadata do
     }
   end
 
-  # TODO: Remove this dialyzer suppression once forcibly_serve_as_binary?/1 and 
-  # allowed_inline?/1 are fully implemented with real logic. Currently these stub 
+  # TODO: Remove this dialyzer suppression once forcibly_serve_as_binary?/1 and
+  # allowed_inline?/1 are fully implemented with real logic. Currently these stub
   # functions always return false/true, causing dialyzer to detect dead code branches.
   @dialyzer {:nowarn_function, service_metadata: 1}
   @spec service_metadata(StorageExEcto.Models.Blob.t()) :: map()

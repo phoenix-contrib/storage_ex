@@ -1,9 +1,9 @@
 defmodule StorageEx.PreviewVariantIntegrationTest do
-  use ExUnit.Case, async: false
+  use ExUnit.Case, async: true
   use StorageEx.Support.DiskCleanup
 
   alias StorageEx.PreviewVariant
-  alias StorageEx.Previewers.{VideoPreviewer, PopplerPDFPreviewer}
+  alias StorageEx.Previewers.{MuPDFPreviewer, PopplerPDFPreviewer, VideoPreviewer}
 
   @fixtures_path Path.expand("fixtures/files", __DIR__)
 
@@ -215,7 +215,7 @@ defmodule StorageEx.PreviewVariantIntegrationTest do
     @tag :integration
     test "generates PDF preview with variant" do
       if PopplerPDFPreviewer.available?() or
-           StorageEx.Previewers.MuPDFPreviewer.available?() do
+           MuPDFPreviewer.available?() do
         pdf_path = Path.join(@fixtures_path, "report.pdf")
         pdf_data = File.read!(pdf_path)
         pdf_key = "test_pdfs/pv_report_#{:rand.uniform(100_000)}.pdf"

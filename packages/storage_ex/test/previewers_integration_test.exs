@@ -1,9 +1,9 @@
 defmodule StorageEx.PreviewersIntegrationTest do
-  use ExUnit.Case, async: false
+  use ExUnit.Case, async: true
   use StorageEx.Support.DiskCleanup
 
   alias StorageEx.Previewer
-  alias StorageEx.Previewers.{VideoPreviewer, PopplerPDFPreviewer, MuPDFPreviewer}
+  alias StorageEx.Previewers.{MuPDFPreviewer, PopplerPDFPreviewer, VideoPreviewer}
 
   @fixtures_path Path.expand("fixtures/files", __DIR__)
   @tmp_dir System.tmp_dir!()

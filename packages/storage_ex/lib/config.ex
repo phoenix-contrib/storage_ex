@@ -1,4 +1,6 @@
 defmodule StorageEx.Config do
+  require Logger
+
   @moduledoc """
   Central configuration for StorageEx.
 
@@ -70,6 +72,51 @@ defmodule StorageEx.Config do
 
   def default_service, do: get_config().service
   def services, do: get_config().services
+
+  @doc """
+  Returns the list of configured previewers.
+
+  Previewers are tried in order until one accepts the content type.
+  Default previewers are:
+    - StorageEx.Previewers.PopplerPDFPreviewer
+    - StorageEx.Previewers.MuPDFPreviewer
+    - StorageEx.Previewers.VideoPreviewer
+
+  ## Configuration
+
+      config :storage_ex,
+        previewers: [
+          MyApp.CustomPreviewer,
+          StorageEx.Previewers.PopplerPDFPreviewer,
+          StorageEx.Previewers.VideoPreviewer
+        ]
+  """
+  def previewers, do: get_config().previewers
+
+  @doc """
+  Returns the list of configured analyzers.
+
+  Analyzers are tried in order until one accepts the content type.
+  Default analyzers are:
+    - StorageEx.Analyzers.ImageAnalyzer
+    - StorageEx.Analyzers.VideoAnalyzer
+    - StorageEx.Analyzers.AudioAnalyzer
+    - StorageEx.Analyzers.PdfAnalyzer
+    - StorageEx.Analyzers.NullAnalyzer (fallback)
+
+  ## Configuration
+
+      config :storage_ex,
+        analyzers: [
+          MyApp.CustomAnalyzer,
+          StorageEx.Analyzers.ImageAnalyzer,
+          StorageEx.Analyzers.VideoAnalyzer,
+          StorageEx.Analyzers.AudioAnalyzer,
+          StorageEx.Analyzers.PdfAnalyzer,
+          StorageEx.Analyzers.NullAnalyzer  # Always last for fallback
+        ]
+  """
+  def analyzers, do: get_config().analyzers
   def endpoint, do: get_config()[:endpoint]
 
   @doc """
@@ -114,36 +161,6 @@ defmodule StorageEx.Config do
     end
   end
 
-  @doc """
-  Returns the list of configured previewers.
-
-  Previewers are tried in order until one accepts the content type.
-  Default previewers are:
-    - StorageEx.Previewers.PopplerPDFPreviewer
-    - StorageEx.Previewers.MuPDFPreviewer
-    - StorageEx.Previewers.VideoPreviewer
-
-  ## Configuration
-
-      config :storage_ex,
-        previewers: [
-          MyApp.CustomPreviewer,
-          StorageEx.Previewers.PopplerPDFPreviewer,
-          StorageEx.Previewers.VideoPreviewer
-        ]
-  """
-  def previewers do
-    Application.get_env(:storage_ex, :previewers, default_previewers())
-  end
-
-  defp default_previewers do
-    [
-      StorageEx.Previewers.PopplerPDFPreviewer,
-      StorageEx.Previewers.MuPDFPreviewer,
-      StorageEx.Previewers.VideoPreviewer
-    ]
-  end
-
   def get_service!(nil), do: get_service!(default_service())
 
   def get_service!(name) do
@@ -156,7 +173,8 @@ defmodule StorageEx.Config do
           try do
             String.to_existing_atom(name)
           rescue
-            ArgumentError -> raise ArgumentError, "Unknown storage service #{inspect(name)}"
+            ArgumentError ->
+              reraise ArgumentError, "Unknown storage service #{inspect(name)}", __STACKTRACE__
           end
 
         true ->
@@ -200,13 +218,17 @@ defmodule StorageEx.Config do
     end
   end
 
-  # Handle both keyword lists (from Application.get_all_env/1) and maps
-  defp normalize_config(opts) when is_list(opts) do
+  @doc false
+  # Normalizes configuration options into a consistent map format.
+  # Public for testing purposes only - not part of the public API.
+  def normalize_config(opts) when is_list(opts) do
     opts |> Enum.into(%{}) |> normalize_config()
   end
 
-  defp normalize_config(opts) when is_map(opts) do
+  def normalize_config(opts) when is_map(opts) do
     services = Map.get(opts, :services, %{})
+    analyzers = Map.get(opts, :analyzers, [])
+    previewers = Map.get(opts, :previewers, [])
 
     services =
       if map_size(services) > 0 do
@@ -220,7 +242,23 @@ defmodule StorageEx.Config do
         }
       end
 
+    analyzers =
+      if is_list(analyzers) and length(analyzers) > 0 do
+        analyzers
+      else
+        default_analyzers()
+      end
+
+    previewers =
+      if is_list(previewers) and length(previewers) > 0 do
+        previewers
+      else
+        default_previewers()
+      end
+
     %{
+      analyzers: analyzers,
+      previewers: previewers,
       services: services,
       service: Map.get(opts, :service, :local),
       endpoint: Map.get(opts, :endpoint)
@@ -252,7 +290,7 @@ defmodule StorageEx.Config do
   defp validate_behaviour!(mod) do
     behaviours = mod.module_info(:attributes)[:behaviour] || []
 
-    unless StorageEx.Service in behaviours do
+    if StorageEx.Service not in behaviours do
       IO.warn("""
       Warning: #{inspect(mod)} does not declare @behaviour StorageEx.Service.
       Ensure the module implements all required callbacks.
@@ -263,8 +301,6 @@ defmodule StorageEx.Config do
   end
 
   # --- Transformer Selection -------------------------------------------------
-
-  require Logger
 
   defp check_transformer(transformer, warning_message) do
     if Code.ensure_loaded?(transformer) and transformer.available?() do
@@ -280,5 +316,23 @@ defmodule StorageEx.Config do
 
       StorageEx.Transformers.Null
     end
+  end
+
+  defp default_previewers do
+    [
+      StorageEx.Previewers.PopplerPDFPreviewer,
+      StorageEx.Previewers.MuPDFPreviewer,
+      StorageEx.Previewers.VideoPreviewer
+    ]
+  end
+
+  defp default_analyzers do
+    [
+      StorageEx.Analyzers.ImageAnalyzer,
+      StorageEx.Analyzers.VideoAnalyzer,
+      StorageEx.Analyzers.AudioAnalyzer,
+      StorageEx.Analyzers.PdfAnalyzer,
+      StorageEx.Analyzers.NullAnalyzer
+    ]
   end
 end

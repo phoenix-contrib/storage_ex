@@ -120,8 +120,8 @@ defmodule StorageEx.Variant do
   Returns `{:ok, binary_data}` on success.
   """
   def download(%__MODULE__{service_name: service_name} = variant) do
-    with {:ok, _} <- process(variant),
-         variant_key = key(variant) do
+    with {:ok, _} <- process(variant) do
+      variant_key = key(variant)
       StorageEx.download(variant_key, service_name: service_name)
     end
   end
@@ -148,8 +148,8 @@ defmodule StorageEx.Variant do
       url = StorageEx.Variant.url(variant, disposition: :attachment, filename: "thumbnail.jpg")
   """
   def url(%__MODULE__{service_name: service_name} = variant, opts \\ []) do
-    with {:ok, _} <- process(variant),
-         variant_key = key(variant) do
+    with {:ok, _} <- process(variant) do
+      variant_key = key(variant)
       # Get content type from the variation
       content_type = Variation.content_type(variant.variation)
 
@@ -218,31 +218,33 @@ defmodule StorageEx.Variant do
   end
 
   defp transform_data(transformer, input_data, variation) do
-    input_path = nil
-    output_path = nil
+    case write_temp_file(input_data, "input") do
+      {:ok, input_path} ->
+        output_path = temp_output_path(variation.format)
 
-    try do
-      with {:ok, path} <- write_temp_file(input_data, "input"),
-           input_path = path,
-           output_path = temp_output_path(variation.format),
-           {:ok, _} <-
-             transformer.transform(
-               input_path,
-               output_path,
-               variation.transformations,
-               variation.format
-             ),
-           {:ok, output_data} <- File.read(output_path) do
-        {:ok, output_data}
-      else
-        {:error, reason} = error ->
-          Logger.error("Transform failed: #{inspect(reason)}")
-          error
-      end
-    after
-      # Always cleanup temp files
-      if input_path, do: File.rm(input_path)
-      if output_path, do: File.rm(output_path)
+        try do
+          with {:ok, _} <-
+                 transformer.transform(
+                   input_path,
+                   output_path,
+                   variation.transformations,
+                   variation.format
+                 ),
+               {:ok, output_data} <- File.read(output_path) do
+            {:ok, output_data}
+          else
+            {:error, reason} = error ->
+              Logger.error("Transform failed: #{inspect(reason)}")
+              error
+          end
+        after
+          # Always cleanup temp files
+          File.rm(input_path)
+          File.rm(output_path)
+        end
+
+      error ->
+        error
     end
   end
 

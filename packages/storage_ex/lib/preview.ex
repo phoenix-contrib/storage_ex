@@ -180,8 +180,8 @@ defmodule StorageEx.Preview do
   Returns `{:ok, binary_data}` on success.
   """
   def download(%__MODULE__{service_name: service_name} = preview) do
-    with {:ok, _} <- process(preview),
-         preview_key = key(preview) do
+    with {:ok, _} <- process(preview) do
+      preview_key = key(preview)
       StorageEx.download(preview_key, service_name: service_name)
     end
   end
@@ -208,8 +208,8 @@ defmodule StorageEx.Preview do
       url = StorageEx.Preview.url(preview, disposition: :inline, filename: "thumbnail.jpg")
   """
   def url(%__MODULE__{service_name: service_name} = preview, opts \\ []) do
-    with {:ok, _} <- process(preview),
-         preview_key = key(preview) do
+    with {:ok, _} <- process(preview) do
+      preview_key = key(preview)
       # Get content type for the preview image
       content_type = preview_content_type(preview.format)
 
@@ -285,25 +285,27 @@ defmodule StorageEx.Preview do
   end
 
   defp extract_preview(previewer, input_data, format, preview_options) do
-    input_path = nil
-    output_path = nil
+    case write_temp_file(input_data, "preview_input") do
+      {:ok, input_path} ->
+        output_path = temp_output_path(format)
 
-    try do
-      with {:ok, path} <- write_temp_file(input_data, "preview_input"),
-           input_path = path,
-           output_path = temp_output_path(format),
-           {:ok, _metadata} <- previewer.preview(input_path, output_path, preview_options),
-           {:ok, output_data} <- File.read(output_path) do
-        {:ok, output_data}
-      else
-        {:error, reason} = error ->
-          Logger.error("Preview extraction failed: #{inspect(reason)}")
-          error
-      end
-    after
-      # Always cleanup temp files
-      if input_path, do: File.rm(input_path)
-      if output_path, do: File.rm(output_path)
+        try do
+          with {:ok, _metadata} <- previewer.preview(input_path, output_path, preview_options),
+               {:ok, output_data} <- File.read(output_path) do
+            {:ok, output_data}
+          else
+            {:error, reason} = error ->
+              Logger.error("Preview extraction failed: #{inspect(reason)}")
+              error
+          end
+        after
+          # Always cleanup temp files
+          File.rm(input_path)
+          File.rm(output_path)
+        end
+
+      error ->
+        error
     end
   end
 
