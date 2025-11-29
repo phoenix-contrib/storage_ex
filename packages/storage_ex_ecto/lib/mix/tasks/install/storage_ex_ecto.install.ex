@@ -10,6 +10,8 @@ if Code.ensure_loaded?(Igniter) do
 
     use Igniter.Mix.Task
 
+    alias Mix.Tasks.Install.Migrations
+
     @manual_lead_in """
     This guide will walk you through the process of manually installing StorageEx into your project.
     If you are starting from scratch, you can use `mix new` or `mix igniter.new` and follow these instructions.
@@ -34,7 +36,7 @@ if Code.ensure_loaded?(Igniter) do
     @impl Igniter.Mix.Task
     def igniter(igniter) do
       igniter
-      |> Mix.Tasks.Install.Migrations.add_storage_migration()
+      |> Migrations.add_storage_migration()
       |> Igniter.Scribe.start_document(
         "Manual Installation",
         @manual_lead_in,

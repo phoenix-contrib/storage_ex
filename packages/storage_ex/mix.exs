@@ -60,7 +60,7 @@ defmodule PhoenixContribStorageEx.MixProject do
       {:telemetry, "~> 1.0"},
       {:igniter, "~> 0.6", optional: true},
       # Optional image processing (for variants/transformations)
-      {:image, "~> 0.54", only: [:dev, :test]}
+      {:image, "~> 0.54", optional: true}
     ] ++ MixHelpers.deps()
   end
 end

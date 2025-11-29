@@ -2,27 +2,18 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 env:
   MIX_ENV: test
 
 jobs:
   test:
-    name: Test (Elixir ${{ matrix.elixir }} / OTP ${{ matrix.otp }})
+    name: Test (Full Features - with analyzer dependencies)
     runs-on: ubuntu-latest
-    
-    strategy:
-      matrix:
-        elixir: ['1.14', '1.15', '1.16']
-        otp: ['25', '26']
-        exclude:
-          # Exclude incompatible combinations
-          - elixir: '1.14'
-            otp: '26'
-    
+
     services:
       postgres:
         image: postgres:15
@@ -44,8 +35,8 @@ jobs:
       - name: Set up Elixir
         uses: erlef/setup-beam@v1
         with:
-          elixir-version: ${{ matrix.elixir }}
-          otp-version: ${{ matrix.otp }}
+          elixir-version: "1.16"
+          otp-version: "26"
 
       - name: Cache Mix dependencies
         uses: actions/cache@v3
@@ -53,14 +44,19 @@ jobs:
           path: |
             packages/*/deps
             packages/*/_build
-          key: ${{ runner.os }}-mix-${{ matrix.elixir }}-${{ matrix.otp }}-${{ hashFiles('**/mix.lock') }}
+          key: ${{ runner.os }}-mix-1.16-26-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
-            ${{ runner.os }}-mix-${{ matrix.elixir }}-${{ matrix.otp }}-
+            ${{ runner.os }}-mix-1.16-26-
 
       - name: Install Hex and Rebar
         run: |
           mix local.hex --force
           mix local.rebar --force
+
+      - name: Install analyzer and previewer dependencies (libvips, ffmpeg, poppler, mupdf)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libvips-dev ffmpeg poppler-utils mupdf-tools
 
       - name: Install dependencies
         run: make deps
@@ -71,19 +67,17 @@ jobs:
       - name: Check formatting
         run: make format-check
 
-      - name: Run tests
-        run: make test
+      - name: Run tests (full analyzer functionality)
+        run: |
+          set -e
+          make test
+        env:
+          MIX_ENV: test
 
-      - name: Upload coverage to Codecov
-        if: matrix.elixir == '1.16' && matrix.otp == '26'
-        uses: codecov/codecov-action@v3
-        with:
-          files: ./cover/excoveralls.json
-
-  quality:
-    name: Code Quality
+  test-unavailable-tools:
+    name: Test (Unavailable Tools - graceful degradation)
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -91,8 +85,53 @@ jobs:
       - name: Set up Elixir
         uses: erlef/setup-beam@v1
         with:
-          elixir-version: '1.16'
-          otp-version: '26'
+          elixir-version: "1.16"
+          otp-version: "26"
+
+      - name: Cache Mix dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            packages/*/deps
+            packages/*/_build
+          key: ${{ runner.os }}-mix-unavailable-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-unavailable-
+
+      - name: Install Hex and Rebar
+        run: |
+          mix local.hex --force
+          mix local.rebar --force
+
+      # NOTE: Intentionally NOT installing ffmpeg, poppler, mupdf, libvips
+      # This tests graceful degradation when tools are unavailable
+
+      - name: Install dependencies
+        run: make deps
+
+      - name: Compile project
+        run: make compile
+
+      - name: Run tests (unavailable tools - graceful degradation)
+        run: |
+          set -e
+          make test.unavailable_tools
+        env:
+          MIX_ENV: test
+
+  quality:
+    name: Code Quality
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.16"
+          otp-version: "26"
 
       - name: Cache Mix dependencies
         uses: actions/cache@v3
@@ -141,7 +180,7 @@ jobs:
   documentation:
     name: Documentation
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -149,8 +188,8 @@ jobs:
       - name: Set up Elixir
         uses: erlef/setup-beam@v1
         with:
-          elixir-version: '1.16'
-          otp-version: '26'
+          elixir-version: "1.16"
+          otp-version: "26"
 
       - name: Cache Mix dependencies
         uses: actions/cache@v3
@@ -175,7 +214,7 @@ jobs:
 
       - name: Check for documentation warnings
         run: |
-          if make docs 2>&1 | grep -q "warning:"; then 
+          if make docs 2>&1 | grep -q "warning:"; then
             echo "Documentation has warnings"
             make docs
             exit 1

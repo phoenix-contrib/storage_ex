@@ -9,7 +9,7 @@ defmodule StorageEx.Transformers.Null do
   @behaviour StorageEx.Transformer
 
   @impl true
-  def available?(), do: true
+  def available?, do: true
 
   @impl true
   def transform(input_path, output_path, _transformations, _format) do

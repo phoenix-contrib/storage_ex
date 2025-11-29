@@ -119,9 +119,7 @@ defmodule StorageEx.Variation do
     {format, rest}
   end
 
-  defp normalize_transformations(transformations) when is_map(transformations) do
-    Enum.into(transformations, [])
+  defp normalize_transformations(transformations) when is_list(transformations) do
+    transformations
   end
-
-  defp normalize_transformations(transformations), do: transformations
 end

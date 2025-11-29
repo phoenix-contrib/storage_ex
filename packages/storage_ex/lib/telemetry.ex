@@ -43,12 +43,14 @@ defmodule StorageEx.Telemetry do
     * `:url` - URL generation operations
     * `:url_for_direct_upload` - Direct upload URL generation
     * `:headers_for_direct_upload` - Direct upload headers generation
+    * `:analyzer` - File analysis operations
 
   ### Event Types
 
     * `:start` - Emitted when operation begins
     * `:stop` - Emitted when operation completes successfully
     * `:exception` - Emitted when operation fails
+    * `:dependency_missing` - Emitted when analyzer dependencies are missing
 
   ## Measurements
 
@@ -111,7 +113,7 @@ defmodule StorageEx.Telemetry do
 
         def handle_event([:storage_ex, operation, :stop], measurements, metadata, _config) do
           duration_ms = System.convert_time_unit(measurements.duration, :native, :millisecond)
-          
+
           # Extract key from args if present (first arg for most operations)
           key = case metadata.args do
             [key | _] when is_binary(key) -> key
@@ -184,7 +186,7 @@ defmodule StorageEx.Telemetry do
             [key | _] when is_binary(key) -> key
             _ -> nil
           end
-          
+
           Logger.error("StorageEx operation failed",
             operation: operation,
             key: key,
@@ -305,9 +307,12 @@ defmodule StorageEx.Telemetry do
       [:storage_ex, :exists?, :stop],
       [:storage_ex, :compose, :stop],
       [:storage_ex, :update_metadata, :stop],
+      [:storage_ex, :analyzer, :dependency_missing],
+      [:storage_ex, :analyzer, :stop],
       [:storage_ex, :upload, :exception],
       [:storage_ex, :download, :exception],
-      [:storage_ex, :delete, :exception]
+      [:storage_ex, :delete, :exception],
+      [:storage_ex, :analyzer, :exception]
     ]
 
     :telemetry.attach_many(
@@ -329,11 +334,11 @@ defmodule StorageEx.Telemetry do
         _ -> nil
       end
 
-    Logger.debug("StorageEx.#{operation} completed",
+    Logger.debug("StorageEx.#{operation} completed", %{
       key: key,
       service: inspect(metadata.service),
       duration_ms: duration_ms
-    )
+    })
   end
 
   def handle_event([:storage_ex, operation, :exception], measurements, metadata, _config) do
@@ -346,11 +351,31 @@ defmodule StorageEx.Telemetry do
         _ -> nil
       end
 
-    Logger.error("StorageEx.#{operation} failed",
+    Logger.error("StorageEx.#{operation} failed: #{Exception.message(metadata.reason)}", %{
       key: key,
       service: inspect(metadata.service),
-      duration_ms: duration_ms,
-      error: Exception.message(metadata.reason)
+      duration_ms: duration_ms
+    })
+  end
+
+  def handle_event(
+        [:storage_ex, :analyzer, :dependency_missing],
+        _measurements,
+        metadata,
+        _config
+      ) do
+    analyzer_name =
+      metadata.analyzer
+      |> Module.split()
+      |> List.last()
+
+    Logger.warning(
+      "#{analyzer_name}: #{metadata.dependency} not found. Analysis will return empty metadata.",
+      %{
+        analyzer: metadata.analyzer,
+        dependency: metadata.dependency,
+        install_commands: metadata.install_commands
+      }
     )
   end
 end

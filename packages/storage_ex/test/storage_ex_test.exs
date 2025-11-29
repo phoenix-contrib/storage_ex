@@ -122,6 +122,23 @@ defmodule StorageExTest do
     test "returns error for nonexistent file" do
       assert {:error, :file_not_found} = StorageEx.download_stream("nonexistent")
     end
+
+    test "respects custom chunk size configuration" do
+      # Use streaming_test service with 50KB chunks
+      key = generate_key()
+      # Create exactly 100KB = 2 chunks of 50KB each
+      data = String.duplicate("x", 100 * 1024)
+      StorageEx.upload(key, data, service_name: :streaming_test)
+
+      assert {:ok, stream} = StorageEx.download_stream(key, service_name: :streaming_test)
+      chunks = Enum.to_list(stream)
+
+      # Should be exactly 2 chunks of 50KB each
+      assert length(chunks) == 2
+      assert byte_size(Enum.at(chunks, 0)) == 50 * 1024
+      assert byte_size(Enum.at(chunks, 1)) == 50 * 1024
+      assert IO.iodata_to_binary(chunks) == data
+    end
   end
 
   describe "delete/2" do

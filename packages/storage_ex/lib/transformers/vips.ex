@@ -39,7 +39,7 @@ defmodule StorageEx.Transformers.Vips do
   ## Supported Transformations
 
   - `resize_to_limit` - Resize to fit within dimensions
-  - `resize_to_fit` - Resize to exact dimensions  
+  - `resize_to_fit` - Resize to exact dimensions
   - `resize_to_fill` - Resize and crop to exact dimensions
   - `crop` - Crop image to specified region
   - `rotate` - Rotate image by degrees
@@ -52,7 +52,7 @@ defmodule StorageEx.Transformers.Vips do
   @compile {:no_warn_undefined, Image}
 
   @impl true
-  def available?() do
+  def available? do
     Code.ensure_loaded?(Image)
   end
 
@@ -133,18 +133,26 @@ defmodule StorageEx.Transformers.Vips do
     Image.write(image, final_path, write_opts)
   end
 
-  defp format_to_extension(format) do
-    case format do
-      :jpg -> ".jpg"
-      :jpeg -> ".jpg"
-      :png -> ".png"
-      :webp -> ".webp"
-      :gif -> ".gif"
-      :tiff -> ".tiff"
-      :tif -> ".tiff"
-      format when is_binary(format) -> ".#{format}"
-      _ -> ".png"
-    end
+  @format_extensions %{
+    jpg: ".jpg",
+    jpeg: ".jpg",
+    png: ".png",
+    webp: ".webp",
+    gif: ".gif",
+    tiff: ".tiff",
+    tif: ".tiff"
+  }
+
+  defp format_to_extension(format) when is_atom(format) do
+    Map.get(@format_extensions, format, ".png")
+  end
+
+  defp format_to_extension(format) when is_binary(format) do
+    ".#{format}"
+  end
+
+  defp format_to_extension(_format) do
+    ".png"
   end
 
   defp ensure_extension(path, extension) do

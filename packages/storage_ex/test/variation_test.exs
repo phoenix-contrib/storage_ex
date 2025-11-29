@@ -8,7 +8,6 @@ defmodule StorageEx.VariationTest do
       variation = Variation.new(resize_to_limit: [100, 100])
 
       assert variation.transformations == [resize_to_limit: [100, 100]]
-      # default
       assert variation.format == :png
     end
 

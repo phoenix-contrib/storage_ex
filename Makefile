@@ -43,11 +43,18 @@ install: ## Run Igniter install for phoenix_contrib_storage_ex
 ## --------------------
 
 .PHONY: test
-test: ## Run tests in all packages
-	@for pkg in $(PACKAGES); do \
+test: ## Run tests in all packages (requires ffmpeg, poppler, mupdf, libvips)
+	@exit_code=0; \
+	for pkg in $(PACKAGES); do \
 		echo "==> Testing $$pkg"; \
-		(cd $(PACKAGES_PATH)/$$pkg && MIX_ENV=test mix test); \
-	done
+		(cd $(PACKAGES_PATH)/$$pkg && MIX_ENV=test mix test) || exit_code=$$?; \
+	done; \
+	exit $$exit_code
+
+.PHONY: test.unavailable_tools
+test.unavailable_tools: ## Run tests for graceful degradation when tools are unavailable
+	@echo "==> Testing storage_ex (unavailable_tools only)"
+	@(cd $(PACKAGES_PATH)/storage_ex && MIX_ENV=test mix test --only unavailable_tools)
 
 .PHONY: test.watch
 test.watch: ## Run test watch in all packages

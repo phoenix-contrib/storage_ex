@@ -33,8 +33,6 @@ defmodule StorageEx.Previewers.PopplerPDFPreviewer do
 
   @behaviour StorageEx.Previewer
 
-  require Logger
-
   @impl true
   def accept?(content_type) when is_binary(content_type) do
     content_type in ["application/pdf", "application/x-pdf"]
@@ -55,17 +53,7 @@ defmodule StorageEx.Previewers.PopplerPDFPreviewer do
         generated_file = "#{base_path}.png"
 
         # Move to the desired output path if different
-        if generated_file == output_path do
-          {:ok, %{filename: "preview.png", content_type: "image/png"}}
-        else
-          case File.rename(generated_file, output_path) do
-            :ok ->
-              {:ok, %{filename: "preview.png", content_type: "image/png"}}
-
-            {:error, reason} ->
-              {:error, "Failed to move preview file: #{inspect(reason)}"}
-          end
-        end
+        move_preview_file(generated_file, output_path)
 
       {:error, reason} ->
         {:error, reason}
@@ -73,7 +61,7 @@ defmodule StorageEx.Previewers.PopplerPDFPreviewer do
   end
 
   @impl true
-  def available?() do
+  def available? do
     StorageEx.Previewer.command_available?(pdftoppm_path())
   end
 
@@ -98,5 +86,19 @@ defmodule StorageEx.Previewers.PopplerPDFPreviewer do
 
   defp pdftoppm_path do
     Application.get_env(:storage_ex, :pdftoppm_path, "pdftoppm")
+  end
+
+  defp move_preview_file(generated_file, output_path) do
+    if generated_file == output_path do
+      {:ok, %{filename: "preview.png", content_type: "image/png"}}
+    else
+      case File.rename(generated_file, output_path) do
+        :ok ->
+          {:ok, %{filename: "preview.png", content_type: "image/png"}}
+
+        {:error, reason} ->
+          {:error, "Failed to move preview file: #{inspect(reason)}"}
+      end
+    end
   end
 end

@@ -49,8 +49,6 @@ defmodule StorageEx.Previewers.VideoPreviewer do
 
   @behaviour StorageEx.Previewer
 
-  require Logger
-
   @impl true
   def accept?(content_type) when is_binary(content_type) do
     String.starts_with?(content_type, "video/")
@@ -71,7 +69,7 @@ defmodule StorageEx.Previewers.VideoPreviewer do
   end
 
   @impl true
-  def available?() do
+  def available? do
     StorageEx.Previewer.command_available?(ffmpeg_path())
   end
 

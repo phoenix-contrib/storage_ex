@@ -11,6 +11,9 @@ defmodule StorageEx.Phoenix.DiskController do
 
   import Plug.Conn
 
+  alias StorageEx.Config
+  alias StorageEx.Services.DiskService
+
   @doc """
   Initializes the controller action.
   """
@@ -32,8 +35,8 @@ defmodule StorageEx.Phoenix.DiskController do
   def show(conn, %{"encoded_key" => encoded_key, "filename" => filename}) do
     case decode_verified_key(conn, encoded_key) do
       {:ok, key_data} ->
-        service = StorageEx.Config.get_service!(key_data.service_name)
-        path = StorageEx.Services.DiskService.path_for(service, key_data.key)
+        service = Config.get_service!(key_data.service_name)
+        path = DiskService.path_for(service, key_data.key)
 
         case File.stat(path) do
           {:ok, %{type: :regular}} ->
@@ -66,25 +69,7 @@ defmodule StorageEx.Phoenix.DiskController do
   def update(conn, %{"encoded_token" => encoded_token}) do
     case decode_verified_token(conn, encoded_token) do
       {:ok, token_data} ->
-        if acceptable_content?(conn, token_data) do
-          service = StorageEx.Config.get_service!(token_data.service_name)
-          {:ok, body, conn} = read_body(conn)
-
-          case StorageEx.Services.DiskService.upload(service, token_data.key, body,
-                 checksum: token_data[:checksum]
-               ) do
-            {:ok, _key} ->
-              send_resp(conn, 204, "")
-
-            {:error, :integrity_error} ->
-              send_resp(conn, 422, "Integrity check failed")
-
-            {:error, _reason} ->
-              send_resp(conn, 422, "Upload failed")
-          end
-        else
-          send_resp(conn, 422, "Content type or length mismatch")
-        end
+        handle_upload(conn, token_data)
 
       {:error, _reason} ->
         send_resp(conn, 404, "Not Found")
@@ -153,5 +138,25 @@ defmodule StorageEx.Phoenix.DiskController do
   defp get_token_salt(conn) do
     conn.private[:storage_ex_token_salt] ||
       Application.get_env(:storage_ex, :token_salt, "storage_ex_disk_service")
+  end
+
+  defp handle_upload(conn, token_data) do
+    if acceptable_content?(conn, token_data) do
+      service = Config.get_service!(token_data.service_name)
+      {:ok, body, conn} = read_body(conn)
+
+      case DiskService.upload(service, token_data.key, body, checksum: token_data[:checksum]) do
+        {:ok, _key} ->
+          send_resp(conn, 204, "")
+
+        {:error, :integrity_error} ->
+          send_resp(conn, 422, "Integrity check failed")
+
+        {:error, _reason} ->
+          send_resp(conn, 422, "Upload failed")
+      end
+    else
+      send_resp(conn, 422, "Content type or length mismatch")
+    end
   end
 end

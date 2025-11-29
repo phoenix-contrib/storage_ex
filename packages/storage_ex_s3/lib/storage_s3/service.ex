@@ -3,6 +3,7 @@ defmodule StorageExS3.Service do
 
   @behaviour StorageEx.Service
 
+  alias ExAws.S3.Upload
   alias StorageEx.Config
   alias StorageExS3.Provider
 
@@ -72,26 +73,32 @@ defmodule StorageExS3.Service do
   @spec upload(t(), String.t(), iodata() | Enumerable.t() | Path.t(), upload_opts) ::
           {:ok, String.t()} | {:error, term()}
   def upload(%__MODULE__{provider_config: %{bucket: bucket}, ex_aws_config: aws}, key, data, opts) do
-    request =
-      cond do
-        is_binary(data) ->
-          ExAws.S3.put_object(bucket, key, data, opts)
+    request = build_upload_request(bucket, key, data, opts)
+    handle_upload_response(ExAws.request(request, aws), key)
+  end
 
-        match?(%Stream{}, data) ->
-          ExAws.S3.upload(data, bucket, key, opts)
+  defp build_upload_request(bucket, key, data, opts) do
+    cond do
+      is_binary(data) ->
+        ExAws.S3.put_object(bucket, key, data, opts)
 
-        is_binary(data) and File.regular?(data) ->
-          data
-          |> ExAws.S3.Upload.stream_file()
-          |> ExAws.S3.upload(bucket, key, opts)
+      match?(%Stream{}, data) ->
+        ExAws.S3.upload(data, bucket, key, opts)
 
-        true ->
-          raise ArgumentError,
-                "Unsupported upload data type: #{inspect(data)}. " <>
-                  "Expected binary, stream, or file path."
-      end
+      is_binary(data) and File.regular?(data) ->
+        data
+        |> Upload.stream_file()
+        |> ExAws.S3.upload(bucket, key, opts)
 
-    case ExAws.request(request, aws) do
+      true ->
+        raise ArgumentError,
+              "Unsupported upload data type: #{inspect(data)}. " <>
+                "Expected binary, stream, or file path."
+    end
+  end
+
+  defp handle_upload_response(response, key) do
+    case response do
       {:ok, %{status_code: 200}} -> {:ok, key}
       # multipart upload success
       {:ok, :done} -> {:ok, key}

@@ -4,6 +4,8 @@ defmodule Mix.Tasks.Install.Migrations do
   `mix igniter.install phoenix_contrib_storage_ex` task.
   """
 
+  alias Igniter.Libs.Ecto
+
   def add_storage_migration(igniter) do
     base = "create_storage_ex_ecto_tables"
 
@@ -22,7 +24,7 @@ defmodule Mix.Tasks.Install.Migrations do
       )
     else
       igniter
-      |> Igniter.Libs.Ecto.gen_migration(
+      |> Ecto.gen_migration(
         repo_module,
         base,
         body: migration_body(repo_module)
