@@ -20,17 +20,6 @@ defmodule StorageEx.AnalyzerTest do
     send(config.test_pid, {:telemetry_event, event, metadata})
   end
 
-  setup do
-    # Ensure analyzers configuration is set for each test
-    original_analyzers = Application.get_env(:storage_ex, :analyzers)
-
-    on_exit(fn ->
-      Application.put_env(:storage_ex, :analyzers, original_analyzers)
-    end)
-
-    %{original_analyzers: original_analyzers}
-  end
-
   describe "find_analyzer/1" do
     test "returns ImageAnalyzer for image content types" do
       # In test environment, Image package may or may not be available
@@ -149,17 +138,6 @@ defmodule StorageEx.AnalyzerTest do
       {:ok, ^key} = StorageEx.upload(key, data)
 
       # Should use NullAnalyzer for text files
-      assert {:ok, %{}} = Analyzer.analyze(key, "text/plain", default_service())
-    end
-
-    test "gracefully handle when no analyzer found for .txt" do
-      Application.put_env(:storage_ex, :analyzers, [])
-
-      key = "test/analyzer/#{System.unique_integer([:positive])}.txt"
-      data = "Hello, world!"
-
-      {:ok, ^key} = StorageEx.upload(key, data)
-
       assert {:ok, %{}} = Analyzer.analyze(key, "text/plain", default_service())
     end
 

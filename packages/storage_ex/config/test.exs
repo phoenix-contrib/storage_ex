@@ -1,5 +1,8 @@
 import Config
 
+# Suppress debug/info logs during tests
+config :logger, level: :warning
+
 # NOTE: Not necessary to configure all previewers and analyzers for tests,
 # but help understand how they're configured in real usage.
 # In case you're here checking. Hi! 👋

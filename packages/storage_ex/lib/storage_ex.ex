@@ -406,6 +406,157 @@ defmodule StorageEx do
     StorageEx.PreviewVariant.new(key, opts)
   end
 
+  # --- Async Jobs (Background Processing) ---
+
+  @doc """
+  Enqueues an analysis job to run in the background.
+
+  This is the async version of `analyze/3`. It enqueues a job to extract
+  metadata from a file without blocking the current process.
+
+  By default, uses `StorageEx.JobAdapters.Async` which runs jobs in
+  lightweight Elixir Tasks (fire-and-forget, like Rails' default).
+
+  ## Parameters
+
+    * `key` - Storage key of the file to analyze
+    * `content_type` - MIME type for analyzer selection
+    * `opts` - Options:
+      * `:service_name` - Service containing the file (default: default service)
+
+  ## Returns
+
+    * `{:ok, job_id}` - Job successfully enqueued
+    * `{:error, reason}` - Failed to enqueue
+
+  ## Examples
+
+      # Async analysis (non-blocking)
+      {:ok, ref} = StorageEx.analyze_later("photo.jpg", "image/jpeg")
+
+      # With specific service
+      {:ok, ref} = StorageEx.analyze_later("video.mp4", "video/mp4",
+        service_name: :s3
+      )
+  """
+  @spec analyze_later(String.t(), String.t(), keyword()) :: {:ok, term()} | {:error, term()}
+  def analyze_later(key, content_type, opts \\ []) do
+    Config.job_adapter().enqueue_analyze(key, content_type, opts)
+  end
+
+  @doc """
+  Enqueues a file deletion job to run in the background.
+
+  This is the async version of `delete/2`. It enqueues a job to delete
+  a file without blocking the current process.
+
+  ## Parameters
+
+    * `key` - Storage key of the file to delete
+    * `opts` - Options:
+      * `:service_name` - Service containing the file (default: default service)
+
+  ## Returns
+
+    * `{:ok, job_id}` - Job successfully enqueued
+    * `{:error, reason}` - Failed to enqueue
+
+  ## Examples
+
+      # Async deletion (non-blocking)
+      {:ok, ref} = StorageEx.purge_later("old_photo.jpg")
+
+      # With specific service
+      {:ok, ref} = StorageEx.purge_later("old_video.mp4", service_name: :s3)
+  """
+  @spec purge_later(String.t(), keyword()) :: {:ok, term()} | {:error, term()}
+  def purge_later(key, opts \\ []) do
+    service_name = Keyword.get(opts, :service_name) || Config.default_service()
+    Config.job_adapter().enqueue_purge(key, service_name, opts)
+  end
+
+  @doc """
+  Enqueues a preview generation job to run in the background.
+
+  This is the async version of `Preview.process/1`. It enqueues a job to
+  generate a preview image from a non-image file (PDF, video, etc.).
+
+  ## Parameters
+
+    * `key` - Storage key of the source file
+    * `opts` - Preview options:
+      * `:content_type` - MIME type of the source file (required)
+      * `:format` - Output format (`:png` or `:jpg`)
+      * `:service_name` - Service containing the file
+      * `:time` - Time position for video previews
+
+  ## Returns
+
+    * `{:ok, job_id}` - Job successfully enqueued
+    * `{:error, reason}` - Failed to enqueue
+
+  ## Examples
+
+      # Async video preview
+      {:ok, ref} = StorageEx.preview_later("video.mp4",
+        content_type: "video/mp4",
+        time: "00:00:05"
+      )
+
+      # Async PDF preview
+      {:ok, ref} = StorageEx.preview_later("document.pdf",
+        content_type: "application/pdf"
+      )
+  """
+  @spec preview_later(String.t(), keyword()) :: {:ok, term()} | {:error, term()}
+  def preview_later(key, opts) do
+    Config.job_adapter().enqueue_preview(key, opts)
+  end
+
+  @doc """
+  Enqueues an image transformation job to run in the background.
+
+  This is the async version of `Variant.process/1`. It enqueues a job to
+  create a transformed version of an image.
+
+  ## Parameters
+
+    * `key` - Storage key of the source image
+    * `transformations` - Transformation options:
+      * `:resize_to_limit` - Resize to fit within `[width, height]`
+      * `:resize_to_fit` - Resize to exact `[width, height]`
+      * `:resize_to_fill` - Resize and crop to exact `[width, height]`
+      * `:crop` - Crop image `[x, y, width, height]`
+      * `:rotate` - Rotate by degrees
+      * `:quality` - JPEG/WebP quality (1-100)
+      * `:format` - Output format (`:png`, `:jpg`, `:webp`)
+    * `opts` - Additional options:
+      * `:service_name` - Service containing the file
+
+  ## Returns
+
+    * `{:ok, job_id}` - Job successfully enqueued
+    * `{:error, reason}` - Failed to enqueue
+
+  ## Examples
+
+      # Async thumbnail generation
+      {:ok, ref} = StorageEx.transform_later("photo.jpg",
+        resize_to_limit: [100, 100],
+        format: :webp
+      )
+
+      # With specific service
+      {:ok, ref} = StorageEx.transform_later("image.png",
+        [resize_to_fill: [200, 200]],
+        service_name: :s3
+      )
+  """
+  @spec transform_later(String.t(), keyword(), keyword()) :: {:ok, term()} | {:error, term()}
+  def transform_later(key, transformations, opts \\ []) do
+    Config.job_adapter().enqueue_transform(key, transformations, opts)
+  end
+
   # --- Analyzers ---
 
   @doc """

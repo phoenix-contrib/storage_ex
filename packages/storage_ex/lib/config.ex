@@ -50,6 +50,8 @@ defmodule StorageEx.Config do
     * `:services` - Map of service configurations
     * `:token_salt` - Salt for signing tokens (default: "storage_ex_disk_service")
     * `:variant_processor` - Transformer for image variants (default: :vips)
+    * `:job_adapter` - Job adapter for async operations (default: nil)
+    * `:job_queues` - Map of queue names per job type
 
   ## Variant Processing
 
@@ -63,6 +65,19 @@ defmodule StorageEx.Config do
 
       # Disable variants completely
       config :storage_ex, variant_processor: :disabled
+
+  ## Job Processing
+
+  Configure the job adapter for async operations:
+
+      # Async adapter (default) - fire-and-forget Tasks, like Rails
+      config :storage_ex, job_adapter: StorageEx.JobAdapters.Async
+
+      # Inline adapter - runs synchronously (good for tests)
+      config :storage_ex, job_adapter: StorageEx.JobAdapters.Inline
+
+      # Oban adapter (requires storage_ex_oban package) - persistence & retries
+      config :storage_ex, job_adapter: StorageExOban
   """
 
   @key {:storage_ex, :config}
@@ -118,6 +133,38 @@ defmodule StorageEx.Config do
   """
   def analyzers, do: get_config().analyzers
   def endpoint, do: get_config()[:endpoint]
+
+  @doc """
+  Returns the configured job adapter module.
+
+  The job adapter handles async operations like `analyze_later`, `purge_later`, etc.
+
+  ## Default Behavior
+
+  Defaults to `StorageEx.JobAdapters.Async` to match Rails' behavior where
+  background jobs work out of the box. This adapter runs jobs in separate
+  processes (fire-and-forget, no persistence).
+
+  ## Built-in Adapters
+
+    * `StorageEx.JobAdapters.Async` - Default. Runs jobs in Tasks (non-blocking, no persistence)
+    * `StorageEx.JobAdapters.Inline` - Runs jobs synchronously (blocking)
+
+  ## Examples
+
+      # Default (Async adapter) - jobs run in background Tasks
+      StorageEx.Config.job_adapter()
+      #=> StorageEx.JobAdapters.Async
+
+      # Inline adapter - jobs run synchronously (good for tests)
+      config :storage_ex, job_adapter: StorageEx.JobAdapters.Inline
+
+      # Oban adapter - jobs persisted to database with retries (production)
+      config :storage_ex, job_adapter: StorageExOban
+  """
+  def job_adapter do
+    Application.get_env(:storage_ex, :job_adapter, StorageEx.JobAdapters.Async)
+  end
 
   @doc """
   Returns the configured variant transformer module.

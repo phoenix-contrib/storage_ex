@@ -23,8 +23,18 @@ defmodule PhoenixContribStorageEx.MixProject do
       MixHelpers.common_project_config()
   end
 
+  # Starts StorageEx.Application which supervises StorageEx.TaskSupervisor.
+  #
+  # The TaskSupervisor is required for the default Async job adapter which
+  # runs background jobs in lightweight BEAM processes (like Rails' default
+  # :async ActiveJob adapter).
+  #
+  # Even if you use a different adapter (Oban, Inline), the TaskSupervisor
+  # is still started but remains idle - it's just one lightweight process.
+  # This keeps the setup simple: jobs work out of the box with zero config.
   def application do
     [
+      mod: {StorageEx.Application, []},
       extra_applications: [:logger]
     ]
   end
