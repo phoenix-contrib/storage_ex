@@ -12,11 +12,9 @@ defmodule DiskControllerTest do
     def config(:url), do: [scheme: "http", host: "localhost", port: 4000]
   end
 
-  defp generate_key, do: "test_#{System.unique_integer([:positive])}"
-
   describe "show/2 - file download" do
-    test "downloads file with valid token" do
-      key = generate_key()
+    test "downloads file with valid token", %{namespace: ns} do
+      key = "#{ns}/test.txt"
       data = "test content"
       {:ok, ^key} = StorageEx.upload(key, data)
 
@@ -87,8 +85,8 @@ defmodule DiskControllerTest do
       assert conn.status == 404
     end
 
-    test "supports inline disposition" do
-      key = generate_key()
+    test "supports inline disposition", %{namespace: ns} do
+      key = "#{ns}/inline.txt"
       data = "inline content"
       {:ok, ^key} = StorageEx.upload(key, data)
 
@@ -117,8 +115,8 @@ defmodule DiskControllerTest do
   end
 
   describe "update/2 - file upload" do
-    test "uploads file with valid token and matching content" do
-      key = generate_key()
+    test "uploads file with valid token and matching content", %{namespace: ns} do
+      key = "#{ns}/upload.txt"
       data = "upload content"
       checksum = :crypto.hash(:md5, data) |> Base.encode64()
 
@@ -149,8 +147,8 @@ defmodule DiskControllerTest do
       assert {:ok, ^data} = StorageEx.download(key)
     end
 
-    test "returns 422 for content type mismatch" do
-      key = generate_key()
+    test "returns 422 for content type mismatch", %{namespace: ns} do
+      key = "#{ns}/mismatch.txt"
       data = "content"
 
       {:ok, url} =
@@ -178,8 +176,8 @@ defmodule DiskControllerTest do
       refute StorageEx.exists?(key)
     end
 
-    test "returns 422 for content length mismatch" do
-      key = generate_key()
+    test "returns 422 for content length mismatch", %{namespace: ns} do
+      key = "#{ns}/length_mismatch.txt"
       data = "content"
 
       {:ok, url} =
@@ -207,8 +205,8 @@ defmodule DiskControllerTest do
       refute StorageEx.exists?(key)
     end
 
-    test "returns 422 for invalid checksum" do
-      key = generate_key()
+    test "returns 422 for invalid checksum", %{namespace: ns} do
+      key = "#{ns}/bad_checksum.txt"
       data = "content"
       wrong_checksum = :crypto.hash(:md5, "wrong data") |> Base.encode64()
 

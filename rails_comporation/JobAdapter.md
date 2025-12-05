@@ -6,7 +6,71 @@ Rails ActiveStorage provides async job processing for heavy operations that shou
 
 ---
 
-## Rails ActiveStorage Jobs
+## Key Design Insight: Rails vs Phoenix Job Defaults
+
+### Rails: Jobs "Just Work" Out of the Box
+
+Rails ships with **ActiveJob** which has a **default `:async` adapter** that uses a thread pool within the Rails process. This means:
+- Background jobs work immediately in new Rails apps
+- No Redis, no Sidekiq, no extra dependencies
+- Jobs are lost on process crash (not persisted)
+- Production apps typically switch to Sidekiq/GoodJob for persistence
+
+Rails also provides an **`:inline` adapter** for testing that runs jobs synchronously.
+
+### Phoenix: No Built-in Job System
+
+Phoenix/Elixir does **not** ship with a background job system. Users must:
+- Manually add Oban (most popular), Exq, or similar
+- Configure database tables and supervision trees
+- Many apps don't need/want job processing complexity
+
+### StorageEx Strategy
+
+StorageEx **matches Rails' default behavior** - async jobs work out of the box:
+
+1. **Async Adapter (Default)** - Built-in, uses Task for fire-and-forget async (like Rails' default `:async` adapter, no persistence)
+2. **Inline Adapter** - Built-in, runs operations synchronously (good for tests/simple apps)
+3. **Oban Adapter** - Separate package (`storage_ex_oban`), full-featured with persistence/retries
+
+---
+
+## Comparison with Rails
+
+| Feature | Rails ActiveStorage | StorageEx |
+|---------|---------------------|-----------|
+| **Job System** | ActiveJob (built-in) | Pluggable adapter |
+| **Default Behavior** | Async via thread pool | ✅ Async via Tasks (same pattern) |
+| **Sync Operations** | `purge`, `analyze`, etc. | ✅ Same |
+| **Async Operations** | `purge_later`, `analyze_later` | ✅ Same pattern |
+| **Built-in Adapters** | `:async`, `:inline`, `:test` | ✅ `Async` (default), `Inline` |
+| **External Adapters** | Sidekiq, GoodJob, etc. | Oban (separate package) |
+| **Retry Logic** | Built into each job | Adapter-specific |
+| **Job Persistence** | Adapter-dependent | Adapter-dependent |
+
+### Job Types Comparison
+
+| Job Type | Rails Job | StorageEx Function | Queue | Status |
+|----------|-----------|-------------------|-------|--------|
+| **Analyze** | `AnalyzeJob` | `analyze_later/3` | `:analysis` | ✅ |
+| **Purge** | `PurgeJob` | `purge_later/2` | `:purge` | ✅ |
+| **Preview** | `PreviewImageJob` | `preview_later/2` | `:preview` | ✅ |
+| **Transform** | `TransformJob` | `transform_later/3` | `:transform` | ✅ |
+| **Mirror** | `MirrorJob` | `mirror_later/4` | `:mirror` | 🔜 Future |
+
+### Error Handling Comparison
+
+| Scenario | Rails | StorageEx |
+|----------|-------|-----------|
+| **Record not found** | `discard_on ActiveRecord::RecordNotFound` | Adapter handles |
+| **Integrity error** | Retry with polynomial backoff | Adapter handles |
+| **Deadlock** | Retry with polynomial backoff | Adapter handles |
+| **No job system** | N/A (impossible) | `{:error, :no_job_adapter}` |
+| **Job enqueue failure** | Exception | `{:error, reason}` tuple |
+
+---
+
+## Rails ActiveStorage Jobs (Reference)
 
 Rails provides these core async jobs:
 
@@ -607,21 +671,127 @@ The same pattern can be used for other job systems:
 
 ---
 
-## Implementation Phases
+---
 
-### Phase 1: Foundation (Current)
+## Implementation Status
 
-- Core job adapter behaviour
-- Configuration integration
-- Sync operation support
+### ✅ Phase 1: Core Job Adapter (Completed)
 
-### Phase 2: Oban Integration
+1. **Job Adapter Behaviour** (`lib/job_adapter.ex`) ✅
+   - [x] `@callback enqueue_analyze/3`
+   - [x] `@callback enqueue_purge/3`
+   - [x] `@callback enqueue_preview/2`
+   - [x] `@callback enqueue_transform/3`
+   - [x] Helper functions: `default_queue/1`, `default_queues/0`
+   - [ ] `@callback enqueue_mirror/4` (future)
 
-- StorageExOban package
-- Complete job implementations
-- Documentation and testing
+2. **Inline Adapter** (`lib/job_adapters/inline.ex`) ✅
+   - [x] Runs operations synchronously
+   - [x] Returns `{:ok, :completed}` immediately
+   - [x] Good for testing and simple apps
 
-### Phase 3: Additional Adapters
+3. **Async Adapter** (`lib/job_adapters/async.ex`) ✅
+   - [x] Uses `Task.Supervisor` for fire-and-forget
+   - [x] Like Rails' default `:async` adapter
+   - [x] No persistence, jobs lost on crash
+   - [x] Logs errors but doesn't propagate to caller
 
-- Community-driven adapters for other job systems
-- Advanced features (job chaining, priorities, etc.)
+4. **Application Supervision** (`lib/application.ex`) ✅
+   - [x] `StorageEx.TaskSupervisor` for Async adapter
+   - [x] Auto-starts with application
+
+5. **Configuration** (`lib/config.ex`) ✅
+   - [x] `job_adapter/0` - Returns configured adapter
+   - [x] `job_queues/0` - Queue name mapping
+   - [x] Default: `nil` (sync-only mode)
+
+6. **Public API** (`lib/storage_ex.ex`) ✅
+   - [x] `analyze_later/3`
+   - [x] `purge_later/2`
+   - [x] `preview_later/2`
+   - [x] `transform_later/3`
+   - [ ] `mirror_later/4` (future)
+
+7. **Tests** ✅
+   - [x] Unit tests for behaviour (`test/job_adapter_test.exs`)
+   - [x] Integration tests with Inline adapter (`test/job_adapters/inline_test.exs`)
+   - [x] Integration tests with Async adapter (`test/job_adapters/async_test.exs`)
+   - [x] Public API tests (`test/job_later_functions_test.exs`)
+
+### 🔜 Phase 2: Oban Integration (Separate Package)
+
+1. **New Package** (`packages/storage_ex_oban/`)
+   - [ ] Package setup with Oban dependency
+   - [ ] README and documentation
+
+2. **Oban Adapter** (`lib/storage_ex_oban.ex`)
+   - [ ] Implements `StorageEx.JobAdapter` behaviour
+   - [ ] All five job type callbacks
+
+3. **Oban Workers**
+   - [ ] `StorageExOban.AnalyzeWorker`
+   - [ ] `StorageExOban.PurgeWorker`
+   - [ ] `StorageExOban.PreviewWorker`
+   - [ ] `StorageExOban.TransformWorker`
+   - [ ] `StorageExOban.MirrorWorker`
+
+4. **Configuration Helpers**
+   - [ ] `StorageExOban.Config.recommended_queues/1`
+   - [ ] Setup documentation
+
+5. **Tests**
+   - [ ] Unit tests for each worker
+   - [ ] Integration tests with test Oban config
+
+### 🔜 Phase 3: Advanced Features
+
+- [ ] Job progress tracking/callbacks
+- [ ] Priority queue support
+- [ ] Job chaining (preview → transform)
+- [ ] Batch operations
+- [ ] Community adapters (Exq, etc.)
+
+---
+
+## Files to Create
+
+### Phase 1 (storage_ex package)
+
+```
+packages/storage_ex/
+├── lib/
+│   ├── job_adapter.ex              # Behaviour definition
+│   ├── job_adapters/
+│   │   ├── inline.ex               # Sync adapter
+│   │   └── async.ex                # Task-based adapter
+│   └── (update) config.ex          # Add job_adapter config
+│   └── (update) storage_ex.ex      # Add *_later functions
+└── test/
+    ├── job_adapter_test.exs        # Behaviour tests
+    ├── job_adapters/
+    │   ├── inline_test.exs
+    │   └── async_test.exs
+    └── integration/
+        └── job_integration_test.exs
+```
+
+### Phase 2 (storage_ex_oban package)
+
+```
+packages/storage_ex_oban/
+├── lib/
+│   ├── storage_ex_oban.ex          # Main adapter
+│   └── storage_ex_oban/
+│       ├── analyze_worker.ex
+│       ├── purge_worker.ex
+│       ├── preview_worker.ex
+│       ├── transform_worker.ex
+│       ├── mirror_worker.ex
+│       └── config.ex
+├── test/
+│   ├── storage_ex_oban_test.exs
+│   └── workers/
+│       └── (worker tests)
+├── mix.exs
+└── README.md
+```
